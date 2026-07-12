@@ -10,8 +10,11 @@
 
 ---
 
-SAMPLE RUN:
-https://chat.qwen.ai/s/d09f9979-e09d-42bb-a7bc-62a76afd79e2?fev=0.2.72
+SAMPLE ALGEBRAIC RUN:
+https://chat.qwen.ai/s/d09f9979-e09d-42bb-a7bc-62a76afd79e2
+
+SAMPLE FLATLAND RUN:
+https://chat.qwen.ai/c/6e50e57e-2b6b-4bb4-aae9-d7290d61dfe4
 
 ---
 
