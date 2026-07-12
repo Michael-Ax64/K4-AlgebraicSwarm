@@ -10,6 +10,11 @@
 
 ---
 
+SAMPLE RUN:
+https://chat.qwen.ai/s/d09f9979-e09d-42bb-a7bc-62a76afd79e2?fev=0.2.72
+
+---
+
 ## 🌌 Overview
 
 **The K4 Agentic Architecture** is a self-correcting, cybernetic agent swarm runtime environment. Unlike flat, sequential LLM pipelines, K4 operates as a dynamic topological state-space based on the **Algebra of Four-Fold Distinction**. 
