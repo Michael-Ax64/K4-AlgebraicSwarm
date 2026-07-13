@@ -1,6 +1,13 @@
 # THE K4 AGENTIC ARCHITECTURE
 ### A Runtime Environment for Structural Coherence
 
+**LLM-Roleplay bloat is ridiculous.**
+
+This file does not yet reflect the level-up that just happened to the prompts nor that input validation has now been turned into an interactive step.
+
+Still.. if you care about effective and efficient AI swarms.. dig in!
+
+
 > *"The structure, stated proportionately, is more persuasive than the structure inflated."*
 
 ![K4 Architecture](https://img.shields.io/badge/Architecture-K4_Cybernetic-blue)
