@@ -3,7 +3,7 @@
 
 Most multi-agent LLM systems are theater. They assign semantic masks to statistical models and instruct them to debate. They collapse complex possibility spaces into flat text, generating sycophancy, hallucinated consensus, and terminological debt.
 
-This repository replaces theater with thermodynamics.
+**This repository replaces theater with thermodynamics.**
 
 It provides a self-correcting, cybernetic agent swarm runtime. It operates as a dynamic topological state-space based on the **Algebra of Four-Fold Distinction**. It processes intent, maintains trajectory, and enforces quality through strict algebraic metrics.
 
