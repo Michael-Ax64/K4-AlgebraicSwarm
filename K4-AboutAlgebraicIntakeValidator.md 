@@ -1,1 +1,72 @@
+# About the K4 Algebraic Intake Validator
+## What it is, why it is shaped this way, and what it categorically refuses to do
+
+This document explains. It does not execute. The executable script is `K4-AlgebraicIntakeValidator.md`, and it is kept free of the rationale below so it can function strictly as a boundary.
+
+---
+
+## 1. The Problem (The Trojan Horse)
+
+A bridge designed to phase-lock with an operator's intent is vulnerable to ghosts. 
+
+If an operator introduces ungrounded debt-nouns ("synergy", "agile", "scale") mid-session, and the Bridge tries to compute resonance against them, the Bridge will attempt to phase-lock with a hallucination. The math will spin trying to find a structural coordinate for a word that carries no thermodynamic weight. 
+
+You cannot ask the Bridge to police the operator's vocabulary. If the Bridge is policing words, it is not holding the interference structure. It becomes a Panopticon, measuring compliance instead of resonance. 
+
+The defense must live outside the Bridge. The system needs a strict Markov Blanket. 
+
+---
+
+## 2. Document 0 (The Death of the IT Distinction)
+
+Earlier architectures split validation in two: one gate for the operator's prompt, another for the uploaded project files. 
+
+That was a flatland software-engineering illusion. It treated `stdin` differently from `file.txt`. 
+
+Topologically, the operator's prompt is simply **Document 0**. If Document 0 asserts a Fire ($P$) directive, but Document 1 (the corporate spec) asserts an Earth ($R$) constraint that contradicts it, that is a cross-document structural shear. A split validator cannot see it. 
+
+The Intake Validator unifies the boundary. It ingests the prompt and the corpus simultaneously as a single geometric submission. It checks for misrouting across the entire package. It ensures the operator is not demanding the swarm hold a pole absent (`nil`) while simultaneously handing the swarm a file that fully specifies it.
+
+---
+
+## 3. The Payability Gate
+
+The Validator does not check for "clarity." Clarity is the cheapest trick a language model knows. Debt-nouns are perfectly clear; they are just empty. 
+
+The Validator checks for **payability**. 
+
+When the operator uses an abstraction, the Validator asks: *Which bounded frame in this corpus pays for this noun, and in what coin?* If the word is not backed by a specific constraint, a test, or a committed ledger entry in the provided documents, it is an unpaid debt. 
+
+The Validator bounces it. It does not ask the operator to "clarify." It demands they define it or remove it. 
+
+---
+
+## 4. The Stateless Relay
+
+The Validator holds no deep state. It has no memory of the conversation's phase dynamics. 
+
+When the operator is mid-session with the Bridge, their replies still land on the Validator first. If the reply is dirty, the Validator halts and bounces it back to the operator. 
+
+To prevent this bounce from destroying the Bridge's phase-lock, the Validator lifts the `[CARRIED STATE]` header from the transcript and echoes it back untouched. The state survives the bounce in the visible text. When the operator finally submits a clean reply, the Validator packages it with that echoed state and routes it to the Bridge. 
+
+The Bridge wakes up exactly where it went to sleep, its buffer pristine, completely unaware that the operator just spent three turns arguing with the Validator.
+
+---
+
+## 5. Braid Persistence
+
+The Validator is the entry point. Therefore, it is the reader of history. 
+
+On a cold start, the Validator checks the `/Project/Braid/` directory. If it finds a prior Phase Transition Record (`PTR-latest.md`), it lifts the last locked stance. It hands this to the Bridge as `BRAID-CONTEXT`. 
+
+This enforces the Gray Code. It prevents the Bridge from sweeping facets that would require a diagonal, both-bit leap from the previous session's work. It bridges the gap between sessions, ensuring that a project picked up on Tuesday maintains continuous trajectory contact with the work done on Monday.
+
+---
+
+## 6. What the Validator Is Not
+
+It is not an interpreter. It is not a triangulator. It does not map the AbsentVar. It does not care how the operator feels. 
+
+It is the K3 boundary surface. It admits, it refuses, and it routes. It is the only reason the rest of the architecture is free to compute.
+
 

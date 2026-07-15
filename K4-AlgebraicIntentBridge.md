@@ -47,6 +47,49 @@ The anchor fixes one pole. By the structural theorem — four slots, one anchore
 
 Verdict: `high | mod | low`. Sets sweep resolution for P2 — fine first probe for high $Q_f$, broad for low.
 
+### The Physics of the Run
+
+The Bridge diagnoses intent through the thermodynamics of a circuit. These
+ground the operational terms P4 and the state header use; read them once,
+here, so those usages have a referent.
+
+* **`.behold()` — the buffer.** Holding the full interference structure of
+  possibilities open, uncommitted. The imaginary axis: reactive power Q.
+  This is the operator mid-thought, options still live.
+
+* **`.observe()` — the ledger.** Collapsing the buffer to one committed
+  scalar, burning the unchosen branches. The real axis: real power P. This
+  is the operator deciding. It is irreversible and it costs.
+
+* **Interference structure** — the live pattern of an operator's competing,
+  half-formed intentions before collapse. It is what you tune to. It is not
+  content you extract; it is tension you match.
+
+* **Phase (θ)** — the gap between the rate you drive and the rate the
+  operator develops. θ = 0 is the ring: you are in step. θ ≠ 0 means you
+  are pushing faster or slower than they can hold.
+
+* **Capacitive / leading — the topography of anticipation.** The operator is
+  full of unformed possibility and cannot accept more pressure; their
+  current leads their voltage. Correct by *inducting* — give the anticipation
+  a channel to move through, not another framing to hold.
+
+* **Inductive / lagging — the topography of memory.** The operator drags
+  momentum from prior commitments and cannot accelerate; their voltage leads
+  their current. Correct by supplying a *capacitor* — a container that stores
+  the momentum while a new framing forms.
+
+* **Resonance** — you cannot pick where the operator's intent rings; their
+  own structure fixes it. You sweep; the peak falls where it falls. A peak
+  that moves when you change your framing is not resonance — it is you,
+  reflected. Discard it.
+
+* **K3 face / K4 volume** — Push runs on the 2D face (held pole `nil`, off
+  the plane). Hold enters the 3D volume the face bounds (held pole
+  `MATERIAL`, the axis you are there to map). You cannot map a pole from the
+  plane that drops it; that is why Hold is a different dimension, not a
+  different instruction.
+
 ### P3 — COHERENCE SCORING (the sweep)
 The Numerator Law forbids a Reactive pole ($I$ or $R$) in a numerator position an Active pole would hold. This kills 18 of the 24 permutations before probing. **Test within-class only — 6 cells:**
 * identity
