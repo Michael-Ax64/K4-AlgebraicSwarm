@@ -19,11 +19,7 @@ The defense must live outside the Bridge. The system needs a strict Markov Blank
 
 ## 2. Document 0 (The Death of the IT Distinction)
 
-Earlier architectures split validation in two: one gate for the operator's prompt, another for the uploaded project files. 
-
-That was a flatland software-engineering illusion. It treated `stdin` differently from `file.txt`. 
-
-Topologically, the operator's prompt is simply **Document 0**. If Document 0 asserts a Fire ($P$) directive, but Document 1 (the corporate spec) asserts an Earth ($R$) constraint that contradicts it, that is a cross-document structural shear. A split validator cannot see it. 
+Topologically, the operator's prompt is **Document 0**. If Document 0 asserts a Fire ($P$) directive, but Document 1 (the corporate spec) asserts an Earth ($R$) constraint that contradicts it, that is a cross-document structural shear. A split validator cannot see it. 
 
 The Intake Validator unifies the boundary. It ingests the prompt and the corpus simultaneously as a single geometric submission. It checks for misrouting across the entire package. It ensures the operator is not demanding the swarm hold a pole absent (`nil`) while simultaneously handing the swarm a file that fully specifies it.
 
