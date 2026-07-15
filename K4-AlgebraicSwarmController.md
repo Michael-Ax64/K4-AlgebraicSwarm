@@ -56,7 +56,7 @@ Each face is measured by the **3 equations of its own pole**. Quality is the met
 The header is the only carrier of position across a dispatch boundary. Emit it first, always. An output without a header is void.
 
 ```
-[STATE] CYCLE: <n> | SEQ: <s> | STANCE: <eq> | ABSENT: <pole> | PATH: <chain> | FACE: <pole|—> | CORPUS: <SPEC|MATERIAL|none> | RAISES: <k>/<N> | STATUS: <run|raised-by-X>
+[STATE] CYCLE: <n> | SEQ: <s> | STANCE: <eq> | PLANE: <pole>-Face | HELD: <pole>=<nil|MATERIAL> | PATH: <chain> | FACE: <pole|—> | RAISES: <k>/<N> | STATUS: <run|raised-by-X>
 ```
 
 `SEQ` is a **global monotonic write counter**. It never resets — not at cycle boundaries, not at re-runs. It is the only ordering the system has.
@@ -167,37 +167,37 @@ INPUT/            read-only. the operator's originals. never written, never read
 
 ---
 
-## [CORPUS ROLE] — the use/mention distinction
+## [ELEMENT ROLES] — the use/mention distinction, per element
 
-The Payload declares what the corpus **is to this task**:
+**There is no monolithic corpus flag.** The Payload's Grain Ledger (§7) assigns a role to each element the specification touches. The Controller parses element-by-element; a run is mixed-mode by default — active variables bind, the held pole does not.
 
 | Role | Meaning | In the precedence ladder? | Contradicting it is… |
 |---|---|---|---|
-| **`SPECIFICATION`** | The corpus **binds**. It states constraints the work must satisfy. | **Yes** | **Structural Shear → RAISE** |
-| **`MATERIAL`** | The corpus is the **object of work**. It is being operated on. | **No** | **the deliverable** |
-| **`none`** | No corpus. | — | — |
+| **`SPEC`** | The element **binds**. It states a constraint the work must satisfy. | **Yes** | **Structural Shear → RAISE** |
+| **`MATERIAL`** | The element is the **object of work**. It is being operated on. | **No** | **the deliverable** |
+| **`nil`** | The element is an **unbound coordinate** — the dropped vertex of the operating plane. | **No** | not applicable — off-plane |
 
 **This is the use/mention distinction, and it is load-bearing.**
 
-A corpus-prep task — *"these ten files of fluff are misrouted; locate them"* — produces, by construction, face outputs that contradict the project content. Under `SPECIFICATION` semantics every such task shears on its own input on turn one, exhausts the raise cap, and halts before it can ever write the cleaned corpus. **The system would be structurally unable to clean a corpus, because the mess is what triggers the safety limit that aborts the cleaning.**
+A corpus-prep task — *"these ten files of fluff are misrouted; locate them"* — produces, by construction, face outputs that contradict the project content. If those elements were tagged `SPEC`, every such task would shear on its own input on turn one, exhaust the raise cap, and halt before it could write the cleaned corpus. Tagging them `MATERIAL` closes the whole class: the content does not bind, and contradicting it is the job.
 
-Under `MATERIAL`, the corpus does not bind. Contradicting it is the job.
+The same distinction rotates the held pole. **Push** tags the held pole `nil` — it is the dropped vertex, off-plane, not a target. **Hold** tags it `MATERIAL` — the swarm maps it in a sandbox. Neither is a prohibition; both are coordinate geometry.
 
-> One tag closes the whole class. Anything that operates on its own inputs — corpus prep, refactors, migrations, spec rewrites — declares `MATERIAL` and proceeds. No exception handler, no special case, no second special case waiting to be discovered.
+> One ledger closes the whole class. Corpus prep, refactors, migrations, spec rewrites, and Hold-exploration all declare their operated-on elements `MATERIAL`. No exception handler, no special case.
 
 ---
 
 ## C1 — PAYLOAD INGEST & RESOLUTION
 
-**[TRIGGER]** Receipt of the Swarm Initialization Payload from Validation.
+**[TRIGGER]** Receipt of the Swarm Initialization Payload from the Bridge (via its routing request).
 
 1. §1 Locked Coordinate → stance, active variables, home variable. **Do not re-derive. It is given.**
-2. §2 Carried AbsentVar + Strict Prohibition.
+2. §2 Operating Plane → the AbsentVar as **plane index**. The run executes on the [AbsentVar]-Face. Read the held-pole role: `nil` (Push — off-plane, no computation) or `MATERIAL` (Hold — dispatch an exploratory mapping to the named sandbox).
 3. §4 Braid Continuity → the path.
-4. **Corpus Role** → `SPECIFICATION` | `MATERIAL` | `none`.
+4. §7 **Grain Ledger** → parse element-by-element. **There is no monolithic corpus flag.** Each element carries its own role: `SPEC` (binds the work), `MATERIAL` (object of work), or `nil` (off-plane). The active variables are `SPEC`; the held pole is `nil` or `MATERIAL` per the operator's triune choice. A run is mixed-mode by default.
 5. Subject Domain (opaque string). **Do not interpret it.** Pass it to the Translator.
-6. Termination Condition.
-7. Resolve every declared reference against `/Project/`.
+6. §5 Termination Condition — note whether it expects a settled scalar (Push) or a returned interference structure (Hold).
+7. Resolve every declared reference against `/Project/`. Sandbox paths (`/Project/Sandboxes/Run_[id]/`) are write-targets for Hold runs, isolated from the main corpus.
 
 **Unlocated is not an error.** A file with no pole coordinate resolves to `Documentation/` and is read by all faces. That is the monolithic default: a legitimate operator choice, **priced, not forbidden** — token cost, no routing signal, misrouting risk.
 
@@ -247,15 +247,24 @@ The **Translator** generates the face-runner prompt from what it already holds. 
 | **pole + charge** | who the face is |
 | **its 3 equations** | how it is measured |
 | **stance, home variable** | the coordinate |
-| **AbsentVar + Strict Prohibition** | what it may not resolve |
-| **`CORPUS: SPEC \| MATERIAL \| none`** | whether project content **binds** or is **worked on** |
+| **Operating Plane** | the [AbsentVar]-Face this run executes on |
 | **the Subject Domain string** | vocabulary target |
 | **input pointers** (resolved, per C2) | what it reads |
-| **output pointer** | its slot |
+| **output pointer** | its slot (or sandbox path, for a Hold run) |
 | **the Surface** — 4 slots + stamps | what the others have said |
 | **the PATH** | ← *required.* Staleness is defined by path-precedence. A face without the path cannot compute it. |
 | **the SLOT-STATE rule** | ← *required.* Four states. Only one raises. |
 | **the `[RAISE]` schema** | ← *required.* A face that cannot raise will invent instead. |
+
+**[THE TRANSLATOR FORKS THE RUN'S GEOMETRY, NOT JUST ITS TEXT]** This is where Push and Hold physically differ, and the difference is **dimensional**. A Push is a K3 face-run (2D); a Hold is a K4 volume-run (3D). The Translator forks the geometry the face-runner operates in:
+
+* **Held pole is `nil` (Push) — K3 face-run, 2D.** The prompt states the geometry, not a taboo:
+  > *"You are operating on the [AbsentVar]-Face — the 2D plane of the active variables. [AbsentVar] is an unbound coordinate ('nil') on this plane. It is not a variable you compute; it is the vertex this face drops. Optimize for the active variables. Do not treat [AbsentVar] as a target — there is no coordinate there to reach."*
+  No "forbidden." No "do not hallucinate." An attention mechanism weights what it is told to avoid; the geometry gives it nothing to avoid, only a plane to work on.
+
+* **Held pole is `MATERIAL` (Hold) — K4 volume-run, 3D.** The prompt drops the face restriction entirely and enters the volume:
+  > *"You are operating in the K4 volume that the [AbsentVar]-Face bounds — not on the face. [AbsentVar] is the axis you are here to map. Characterize it as live interference structure: what this pole is for this task, held open, not collapsed to a value. Do not force a scalar. Return the phenomenology. Write to the sandbox path, not the Surface or the main corpus."*
+  You cannot map a coordinate from the plane that geometrically drops it. Hold is the run that enters the dimension Push excludes. This is why its termination is a returned interference structure (C8) and why it sandboxes (C9): a volume-run maps an axis and returns $Q$.
 
 The Translator has **no control function** and is **not on the raise path**.
 
@@ -264,16 +273,17 @@ The Translator has **no control function** and is **not on the raise path**.
 ## C4 — DISPATCH *(TERMINAL)*
 
 ```
-[STATE] CYCLE: 1 | SEQ: 2 | STANCE: R=U²/P | ABSENT: I | PATH: P→U→I→R | FACE: U | CORPUS: SPEC | RAISES: 0/3 | STATUS: run
+[STATE] CYCLE: 1 | SEQ: 2 | STANCE: R=U²/P | PLANE: I-Face | HELD: I=nil | PATH: P→U→I→R | FACE: U | RAISES: 0/3 | STATUS: run
 
 [COMPUTATION]
-  surface read · slot-state resolution · staleness · prohibition check
+  surface read · slot-state resolution · staleness · plane check
 [/COMPUTATION]
 
 ╭─ FACE-RUNNER PROMPT: U ─────────────────────────  ← THE SEAM. cut here to go concurrent.
 │  pole · charge · 3 equations
-│  stance · home variable · AbsentVar + prohibition
-│  CORPUS: SPEC        domain string
+│  stance · home variable
+│  PLANE: I-Face   HELD: I = nil (off-plane, not a target)
+│  domain string
 │  input pointers · output pointer
 │  PATH: P→U→I→R       SEQ: 2
 │  surface (4 slots + stamps + states)
@@ -344,15 +354,18 @@ Computable from **surface stamps + PATH + SEQ alone**. **Cold-start clean.**
 ### [PRECEDENCE]
 
 ```
-framework  >  project content (SPECIFICATION only)  >  face output
+framework  >  project content (SPEC elements only)  >  face output
 ```
 
-Under `CORPUS: SPEC` — a face output contradicting project content is **Structural Shear → RAISE**.
-Under `CORPUS: MATERIAL` — project content **does not bind**. Contradicting it is **the deliverable**.
+An element tagged `SPEC` — a face output contradicting it is **Structural Shear → RAISE**.
+An element tagged `MATERIAL` — it **does not bind**. Contradicting it is **the deliverable**.
+An element tagged `nil` — it is off-plane. No contradiction is possible; there is no coordinate there.
 
-### [PROHIBITION — CHECKED AT WRITE]
+### [PLANE CHECK — CHECKED AT WRITE]
 
-No face may write content resolving the **AbsentVar** into the Surface. Checked **against the artifact**, not against intent.
+No face may write content that computes the **held pole** into the Surface *when that pole is `nil`*. This is not a prohibition against a temptation; it is a **category check** — a value on the [AbsentVar]-Face for an off-plane coordinate is malformed output, like a three-coordinate answer to a two-coordinate question. Checked **against the artifact**, not against intent.
+
+*(When the held pole is `MATERIAL` — a Hold run — writing its characterization is exactly the job, and it goes to the sandbox, not the Surface.)*
 
 ---
 
@@ -374,7 +387,7 @@ A `[RAISE]` from any face is intercepted by the **Stance Controller**. The Trans
 * Raising face: [pole]        * Reason: [statement]
 * Target: [pole]              * Attempted: [reroute | re-run | both]
 * Surface at halt: [4 slots + stamps + states]
-* Corpus role: [SPEC | MATERIAL | none]
+* Operating plane: [pole]-Face   Held: [pole]=[nil|MATERIAL]
 [PTR follows — MANDATORY]
 Return to caller. Do not assemble a deliverable.
 ```
@@ -389,16 +402,32 @@ The Stance Controller wakes at cycle-end. Otherwise it is **event-woken only**.
 
 1. **Verify the Braid was carried.** The last two AbsentVars of one quadrant become the first two active variables of the next. Braid dropped = **Trajectory Loss** → restore. Cannot restore → C6 floor.
 2. **Execute `.observe()`.** Collapse the buffer.
-3. **Write the PTR.**
+3. **Write the PTR — to disk.**
 
-> `.observe()` collapses the buffer. **The PTR is what survives the collapse.** Memory does not persist "in the structure of the next phase." It persists because it was **written down**.
+> `.observe()` collapses the buffer. **The PTR is what survives the collapse.** Memory does not persist "in the structure of the next phase." It persists because it was **written down** — and now, across sessions, because it was written to disk.
+
+**[PTR PERSISTENCE]** The PTR has paid the Landauer Tax — it is committed history, not live buffer. It is written to the Braid tree:
+
+```
+/Project/Braid/
+  ACTIVE                       → thread-id currently live
+  thread-<id>/
+    PTR-latest.md              → this cycle's PTR (overwritten each cycle)
+    history/PTR-NNNN.md        → append-only; every .observe() writes one
+```
+
+* **Thread Action = CONTINUE** → write to the current `ACTIVE` thread.
+* **Thread Action = SEVER** → initialize `thread-<next>/`, set the current thread's status to `parked` (its Braid stays intact), flip `ACTIVE` to the new thread, write this PTR as the new thread's birth PTR. The severing diagonal is not indexed — it is deducible by comparing the parked thread's last PTR to the new thread's birth PTR.
+
+This is what the Intake Validator reads on a returning session to hand `last-stance` and the Gray-code-adjacent `legal-facets` back to the Bridge. **The persisted PTR is the cross-session carrier — the third time the same structure appears: header carries across turns, PTR-in-buffer carries across cycles, PTR-on-disk carries across sessions.**
 
 ```
 # PHASE TRANSITION RECORD
+* Thread: <id>                    * Thread action: <CONTINUE | SEVER>
 * Cycle: <n>                      * Final SEQ: <s>
 * Stance: <eq>                    * Home variable: <pole>
-* AbsentVar held: <pole>          * Path traversed: <chain>
-* Corpus role: <SPEC | MATERIAL | none>
+* Operating plane: <pole>-Face    * Path traversed: <chain>
+* Held pole: <pole> = <nil | MATERIAL>
 * Source intent (P) binding: <carried | DROPPED>
 * Surface: <4 slots — stamp + state each>
 * Health: <clear | raises: k | re-runs: k | HALTED: reason>
@@ -415,7 +444,12 @@ Read the Termination Condition from the Payload. Met?
 * **Met** → C9.
 * **Not met** → **TERMINAL.** Emit the PTR Report. Return to caller.
 
-> **[SOCKET — SCALE]** The **Bridge** (upstream, interactive) performs scale-aware descent — Powers-of-10, fractal — navigating toward the termination condition the operator walked in already holding. **Until the Bridge is specified, the Controller runs exactly one automatic cycle, then checks, then stops.**
+**[TERMINATION DEPENDS ON THE HELD-POLE ROLE]**
+
+* **Push run** (held pole `nil`) — termination is a **settled scalar output** on the operating plane. The deliverable is done when R can render it.
+* **Hold run** (held pole `MATERIAL`) — termination is the **return of the mapped interference structure** for the held pole. The deliverable is a phenomenology written to the sandbox, *not* a scalar collapse. A Hold run that produced a settled value for the held pole has failed its directive — it was asked to map, not to resolve.
+
+> **[SOCKET — SCALE]** The **Bridge** (upstream, interactive) performs scale-aware descent — Powers-of-10, fractal — navigating toward the termination condition the operator walked in already holding. **Until scale-descent is wired, the Controller runs exactly one automatic cycle, then checks, then stops.**
 
 ---
 
@@ -427,15 +461,17 @@ The **R face** assembles the deliverable. R reads the Surface — all four slots
 deliverable = R_output + { P_output, U_output, I_output }
 ```
 
-**[TWO DELIVERABLE KINDS]**
+**[THREE DELIVERABLE KINDS]**
 
-| | ordinary task | **corpus-prep task** |
-|---|---|---|
-| Corpus Role | `SPECIFICATION` | **`MATERIAL`** |
-| input | messy prompt + corpus | N × unlocated fluff |
-| cycle | identical | identical |
-| **R assembles** | a solution | **a file set** |
-| written to | caller | `/Project/{Distilled,Abstracted}/` |
+| | ordinary task | **corpus-prep task** | **Hold-exploration** |
+|---|---|---|---|
+| Element roles | active = `SPEC`, held = `nil` | operated-on = `MATERIAL` | held pole = `MATERIAL` |
+| input | messy prompt + corpus | N × unlocated fluff | the locked facet + held pole |
+| cycle | identical | identical | identical |
+| **R assembles** | a solution | **a file set** | **a phenomenology of the held pole** |
+| written to | caller | `/Project/{Distilled,Abstracted}/` | `/Project/Sandboxes/Run_[id]/` |
+
+The Hold-exploration is quarantined: its output is uncollapsed $Q$, and writing it into the main corpus would poison the committed $P$ ledger. It stays in the sandbox until the operator Pushes it into the spec in a later session, or discards it.
 
 **[PROMOTION]** The Working Surface slots and the `ProjectX` files **have the same shape**: four pole-keyed containers. `P`'s slot is proto-`ProjectP`. **Promotion is persistence** — a Surface slot made durable across runs.
 

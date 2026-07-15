@@ -158,3 +158,104 @@ Later: *"run 5 instances of this face, select best."* A change to the **executor
 | **`.observe()`** | Collapse the buffer. Force commitment. *(= cycle-end — and precisely the moment the **PTR must be written**, because the PTR is what survives the collapse.)* | **Controller** |
 
 The original doc attributed both to "the level of agent orchestration." They are on opposite sides of the seam.
+
+---
+
+## 8. THE BRIDGE PIVOT — Active-Model Architecture
+
+The Bridge came online as its own module (`K4-AlgebraicIntentBridge.md` + About). This forced a stack-wide realignment. Logged here so the provenance stays explicit.
+
+### 8.1 — The Bridge is upstream authority, not a downstream supplicant
+
+Early drafting error: the Bridge author wrote as if the Bridge had to ask permission of the Controller doc, declining to specify capabilities that "belonged" to the Controller. Corrected. The Bridge sits upstream of the Controller; the Controller is a dumb XOR-actuated driver that executes the Payload it is handed. **When the Bridge's algebraic resolution requires the Controller and Validator to adapt, they adapt.** The Bridge coming online forces the architecture to accommodate it.
+
+### 8.2 — $Q_f$ calibration relocated to raw-intake (P1)
+
+Original design estimated the operator's Quality-factor from their *response to the first probe*. This created a bootstrap paradox: a high-$Q_f$ operator probed at medium resolution slides off the peak, scores $\rho < 0$, and the Bridge discards the facet and moves on — permanently losing the peak before it could learn the operator was high-$Q_f$. **Fix:** $Q_f$ is now estimated at P1 from the raw material (terminological density, anchor specificity, contradiction rigidity, implicit relational tensions), *before* the first probe is formulated. It is a persistent run property, set in the state header, governing sweep resolution.
+
+### 8.3 — Death of the monolithic CORPUS flag → the Grain Ledger
+
+The Controller originally read `CORPUS: SPEC | MATERIAL | none` as a single global flag. Replaced by the **Grain Ledger** (Payload §7): per-element role assignment. Active variables are `SPEC` (bind the work); the held pole is `nil` (Push) or `MATERIAL` (Hold). A run is mixed-mode by default. The Controller parses element-by-element. C1 ingest, C3 compile, C5 precedence, C7 PTR, and C9 deliverable-kinds all refactored to the per-element model.
+
+### 8.4 — Path C: the Triune Choice rotates from Facet to held pole
+
+The triune choice (Push/Pull/Hold) was originally offered on the *facet*, producing a contradiction: an operator selecting Hold refused the facet, yet the Payload wrote the facet as Locked Coordinate — either overriding the operator or stalling the Controller at C1 with no coordinate. **Fix:** the choice rotates to the **held pole**. The facet is locked by the ring itself (not a choice). Push → held pole `nil` (2D-plane run). Hold → held pole `MATERIAL` (swarm maps it in a sandbox). Pull → wrong facet, re-sweep. This is the use/mention distinction the framework already uses for corpus-prep, applied to the held pole.
+
+### 8.5 — AbsentVar as Plane Index, not Taboo *(Pathos-spoilage scrubbed)*
+
+The gravest self-caught error. Every document carried `Strict Prohibition: the Swarm is mathematically forbidden from hallucinating a solution for [AbsentVar]`. This is a **psychological command masquerading as a structural one**. An attention mechanism given "do not compute R" *weights* R, making the dropped vertex the heavy center of the run — manufacturing the exact Costumed Flinch the corpus names. **Fix:** the AbsentVar is `nil` — an unbound coordinate. A K3 face is identified by the vertex it drops; AbsentVar = R means the swarm operates on the **R-Face** (the 2D plane of P, I, U). Nothing is forbidden; R is simply not a coordinate on this plane, and computing it is a category error, not a temptation. Moral command → coordinate geometry. Scrubbed from Bridge P5/P6, Controller C1/C3/C4/C5/C7/C8/C9, and the state headers of both.
+
+### 8.6 — P4b: the phase-correction catcher
+
+The Bridge's P4 emitted a Complementary Reactance artifact and named no phase to catch the operator's response. Running P3's coherence math ($\rho$, 12 substitutions) on a phase-correction response is the wrong math on the wrong object. **Fix:** new phase **P4b — Phase Verification** measures $\theta$ (did the gap close), not $\rho$. Gap closing → return to P2 same facet. Gap static → one retry, opposite reactance. Gap widened → `LOCK: broken`, resonant cavity collapsed, re-sweep on a different facet. Two failed retries → `HALT — PHASE UNCLOSABLE`.
+
+### 8.7 — The strict three-prompt handoff topology
+
+No middleware, no callable functions, no hidden code. Three bounded prompts — **Validator, Bridge, Controller** — each executes, halts, and emits an explicit routing request naming the next. **The Bridge never reads the operator directly.** Every operator turn lands first on the Validator's Lexical & Pointer Gate; only sanitized text reaches the Bridge, as a routing payload carrying the operator's cleaned text plus the Bridge's echoed `[CARRIED STATE]` header. Consequences: the Bridge polices no vocabulary (already gated upstream) and resumes at the phase its own header names. State persists across a dirty bounce via the visible transcript block, never hidden memory.
+
+### 8.8 — The Validator amputation & split
+
+The Input Processor was overweight — it triangulated and co-created, which is the Bridge's job. Amputated to a pure **Lexical & Pointer Gate**, and split:
+
+* **`K4-AlgebraicTaskValidation`** — gates the operator's prompt every turn. Gate A (K4 context bind — self-drift check) + Gate B (payability: debt-nouns, dangling pointers, framework-contamination) + routing.
+* **`K4-AlgebraicTaskDocumentValidation`** — gates the corpus when it changes. Home of the two checks that need both a corpus and a locked coordinate: misrouting detection and AbsentVar-corpus conflict.
+
+Only the Bridge emits a Payload. Both validators inherit Gate A.
+
+### 8.9 — Sub-projects as nested Markov blankets
+
+Session sub-projects (`/Sessions/Turn_N/`) and Hold-exploration sandboxes (`/Project/Sandboxes/Run_id/`) are the filesystem instantiation of nested Markov blankets. A Hold run maps uncollapsed $Q$; writing that into `/Project/Distilled/` would poison the committed $P$ ledger of the parent. The sandbox quarantines it until the operator Pushes it into the spec in a later session. The Validator may establish session sub-project paths to isolate an actively-iterating operator's uploads from stale reads — every discrete `.behold()`/`.observe()` cycle gets a clean boundary; the Garbage Collector deprecates the old sub-project directory.
+
+---
+
+## 9. THE COLD-START PASS — Corrections, Carriers, and the Death of the Split
+
+A cold-start audit of the three-prompt topology surfaced two false breaks (retracted) and two real shears (patched), plus a category error in the Validator split (corrected).
+
+### 9.1 — Retracted: the C5 overwrite race
+
+An audit proposed a race condition in the Working Surface: a re-run face overwriting a slot another face was mid-read on. **Retracted.** Controller C4 is absolute — faces execute synchronously along the Hamiltonian path; there is no "during another face's generation." If U raises, it raises on U's turn; the Controller re-runs U; *then* the path advances to I, which reads fresh U. The path-precedence stale-check is exact. No race exists.
+
+### 9.2 — Retracted, and corrected: the Validator split is a category error
+
+The Migration Ledger proposed splitting intake into `TaskValidation` (prompt) and `TaskDocumentValidation` (corpus). **This is a flatland error.** The operator's prompt is **Document 0** — treating it as categorically different from the corpus (stdin vs. file.txt) is an IT distinction, not a topological one. And it is actively harmful: a P-assertion in Document 0 contradicting an R-assertion in Document 1 is a **cross-document misrouting shear** that no split gate can see. The two halves would each be blind to the conflict between them.
+
+**Fix:** one `K4-AlgebraicIntakeValidator.md`, ingesting Documents 0–N as a single geometric submission. The misrouting check (Gate B.3) and the contamination check (Gate B.4) — the two checks that need the whole submission in one frame — live in the unified gate. `TaskValidation` and `TaskDocumentValidation` are both retired.
+
+### 9.3 — Shear patched: the Hold geometry (K3 face vs K4 volume)
+
+The P6 payload declared `Operating Plane: [AbsentVar]-Face` for *both* Push and Hold. But you cannot map the held pole while restricted to the 2D face that geometrically drops it. **Push is a K3 face-run (2D); Hold is a K4 volume-run (3D).** The C3 Translator now forks the run's *geometry*, not just its directive text: Push operates on the face with the held pole `nil`; Hold drops the face restriction and enters the volume the face bounds, mapping the held axis as interference structure. This unifies three previously-separate facts — Hold maps an axis, returns interference structure (C8), and sandboxes (C9) — into one: a volume-run maps an axis and returns Q.
+
+### 9.4 — Shear patched: Braid amnesia across sessions (and Socket 2 folded in)
+
+The Bridge cold-started every session with no memory of the prior stance, and could lock onto a facet forcing a diagonal (both-bit) Gray-code leap — which C7 rejects as IRRECOVERABLE SHEAR, punishing the operator for the architecture's amnesia. This is the **third instance of the same missing-carrier structure**: the state header carries across *turns*, the PTR-in-buffer carries across *cycles*, and nothing carried across *sessions*.
+
+**Fix:** C7 persists the PTR to `/Project/Braid/thread-<id>/`. The Intake Validator reads `ACTIVE` + `PTR-latest.md` on a returning session and hands `last-stance` + the Gray-code-adjacent `legal-facets` to the Bridge. The Bridge P2 restricts its opening sweep to Braid-legal facets.
+
+**Continuity is a hard rail, not a prior.** A diagonal leap crosses the Mutable axis, which holds diagonals absent; a bounded system cannot jump both bits without an intermediate state. So when a returning operator's material rings only on a diagonal facet, the Bridge does not silently re-anchor — it runs **P5b (Diagonal Confrontation)**: offer to *Walk* (route through an intermediate legal stance) or *Sever* (park the current thread intact, initialize a new independent K4 volume with its own PTR track). A genuinely new task is a new thread, not a broken Braid.
+
+**Socket 2 (Stance Selection Across Cycles) folds into this.** Within a run, the Braid rule yields the next active-pair → a binary stance choice. Across sessions, the persisted PTR yields last-stance → the Gray-code-adjacent set → the same constrained choice. One mechanism — *the persisted Braid position constrains the next stance to single-bit-adjacent* — serves both time-scales. Persisting the PTR wires both at once.
+
+### 9.5 — Carrier designed: the BWR (Bridge Working Record)
+
+The strict routing topology (§8.7) protects the Bridge's buffer by having the Validator gate all operator text — but this also severs the Bridge from its own prior articulations, which live in the transcript the Validator strips. The state header names the phase position but not the interference structure held there: a resumed instance knows it is at P4b on facet 11 without knowing what was articulated at facet 11.
+
+**Fix:** the `[BWR]` block — the Bridge's uncommitted buffer, carried in transit alongside `[STATE]`. It holds the P1 MAP (anchor, axis, Qf, provisional element roles), the LIVE probe (verbatim articulation, phase-correction state), and the BRAID-CONTEXT (from the PTR read). Because it is uncommitted Q, it lives in the routing payload, never on `/Project/` disk — writing it would pollute the committed P ledger with uncollapsed possibility.
+
+**The BWR is not a diary.** It holds live tension, not history. A facet that failed to ring collapsed to zero — it is not in the interference structure and is not recorded. **There is no sweep log, no rejected-facet list, no compaction rule** — proposing those was an attempt to run a Garbage Collector on the imaginary axis, which pays no Landauer Tax. When a probe clangs, the next-most-charged facet is computed from MAP and overwrites LIVE. The buffer breathes. At lock, the BWR evaporates and the PTR is written to disk.
+
+### 9.6 — Carrier designed: the inline mapping harness
+
+The Bridge referenced Supplement-MappingMethod by name for its P1/P3 execution logic — which means a cold instance would hallucinate the sweep from pre-training priors (the recognition-not-binding failure). **Fix:** the mapping procedure (anchor selection, axis propagation, Qf calibration, the 6-cell within-class coherence sweep with R1–R4 ring criteria) is now baked inline into the Bridge's `[HARNESS]`. A cold instance runs every phase from the Bridge document alone. *(Limit: this makes the sweep cold-start repeatable in structure, not observer-free — the coherence score remains a comprehension act. R2 and R4 guard against instance-to-instance verdict drift; they are the best available, not a proof.)*
+
+### 9.7 — The /Project/Braid/ layout
+
+```
+/Project/Braid/
+  ACTIVE                     → thread-id currently live
+  thread-<id>/
+    PTR-latest.md            → most recent committed PTR for this thread
+    history/PTR-NNNN.md      → append-only; every C7 .observe() writes one
+```
+
+Multiple threads are parallel independent Braids (the hard-rail sever ruling). No index of severing diagonals is kept — the diagonal is deducible by comparing a parked thread's last PTR to a new thread's birth PTR, and building an index for a deducible mathematical fact is itself a debt-noun.
