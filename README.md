@@ -265,3 +265,6 @@ We do not align the machine by teaching it human morals. We align the machine by
 
 The engine runs. Stand clear of the exhaust.
 
+Implied by the work done in:
+[K4-CompilingReality GitHub Repository](https://github.com/Michael-Ax64/K4-CompilingReality)
+

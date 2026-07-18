@@ -31,7 +31,7 @@ This is what "trustworthy alignment without roleplay" means. Roleplay is what a 
 
 ## 3. Why the 12 facets are the scratchpad, not the interview
 
-The 12-facet diagnostic (Supplement-MappingMethod Part II) was written as an analytic tool — an analyst maps four domain categories to poles, probes tensions, computes drift. In the Bridge it becomes something structurally different.
+The 12-facet diagnostic (L2-MappingMethod Part II) was written as an analytic tool — an analyst maps four domain categories to poles, probes tensions, computes drift. In the Bridge it becomes something structurally different.
 
 The Bridge does not administer facets to the operator. **The Bridge runs the 12 facets as the engine of its own decoupled buffer** — its own `.behold()` is structured by them. Everything the Bridge thinks about the operator's intent, it thinks in facet-shaped tensions. Everything it articulates back, it articulates as a facet's tension in the operator's own vocabulary.
 

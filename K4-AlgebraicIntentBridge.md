@@ -329,7 +329,7 @@ Return to Task Validation.
 
 **[EXECUTION — WRITTEN]**
 
-Following Supplement-MappingMethod Part I, extended with $Q_f$ calibration:
+Following L2-MappingMethod Part I, extended with $Q_f$ calibration:
 
 1. **Fix the anchor.** Which of the operator's named categories is most unambiguous on the dual-binary axes? Score confidence. Anchor it.
 2. **Axis pass on the remaining three.** For each: Active or Reactive? Asserting or Yielding?
