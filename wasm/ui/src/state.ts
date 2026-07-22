@@ -1,10 +1,10 @@
 // wasm/ui/src/state.ts
 import { Signal } from './reactive';
 
-export type UIState = 'idle' | 'processing' | 'awaiting_user' | 'halted';
+export type UIState = 'idle' | 'processing' | 'awaiting_user' | 'awaiting_llm_paste' | 'halted';
 
 export interface ChatMessage {
-  role: 'user' | 'system' | 'error';
+  role: 'user' | 'system' | 'error' | 'prompt_to_copy';
   text: string;
 }
 

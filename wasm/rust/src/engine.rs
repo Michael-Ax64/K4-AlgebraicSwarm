@@ -8,6 +8,15 @@ use crate::state::{ControllerHeader, HeldRole, WorkingSurface, RunStatus};
 use crate::vfs::{VirtualFileSystem, ThreadAction};
 use crate::parser::{K4Parser, ParsedTurn, ParsedHeader, HeaderKind, TerminalArtifact};
 
+// ─── BINDING THE MASTER SPECS INTO THE BINARY ──────────────────
+// This enforces the Cold-Start Rule. Blank LLM instances will now 
+// receive the full algebraic harness, rules, and Lexicons inline.
+const PROMPT_VALIDATOR: &str = include_str!("../../../prompts/K4-AlgebraicIntakeValidator.md");
+const PROMPT_BRIDGE: &str = include_str!("../../../prompts/K4-AlgebraicIntentBridge.md");
+const PROMPT_CONTROLLER: &str = include_str!("../../../prompts/K4-AlgebraicSwarmController.md");
+const PROMPT_PARADOX: &str = include_str!("../../../prompts/K4-ParadoxEngine.md");
+// ───────────────────────────────────────────────────────────────
+
 #[derive(Debug, Serialize, Deserialize)]
 #[serde(tag = "type")]
 pub enum JsCommand {
@@ -118,17 +127,14 @@ impl K4Engine {
         self.vfs = VirtualFileSystem::deserialize_from_js(json_str);
     }
 
-    /// Single string step for legacy tests
     #[wasm_bindgen]
     pub fn step(&mut self, input: &str) -> JsValue {
         let cmd = self.step_command(input);
         self.to_js(cmd)
     }
 
-    /// Full Validator-compliant submission taking multiple documents
     #[wasm_bindgen]
     pub fn step_submission(&mut self, doc0: &str, corpus_json: &str) -> JsValue {
-        // Build the unified geometric object: Document 0 + Corpus 1..N
         let mut unified_input = format!("Document 0 (Prompt):\n{}\n\n", doc0);
         
         if let Ok(docs) = serde_json::from_str::<Vec<(String, String)>>(corpus_json) {
@@ -153,6 +159,9 @@ impl K4Engine {
             StepMode::ExpectUser => {
                 self.mode = StepMode::ExpectLlm;
                 let role = self.last_role;
+                
+                // P-ROOM Recursion handler goes here. For now, simply routing the 
+                // user's response back to the active role's prompt.
                 let prompt = self.compile_role_prompt(role, input);
                 JsCommand::FetchLLM { prompt }
             }
@@ -179,19 +188,15 @@ impl K4Engine {
             self.current_state = Some(h.clone());
         }
 
-        // Bridge BWR and State persistence for the validation intercept dirty-bounce
         if let Some(bwr) = &parsed.bwr {
             self.last_bwr = Some(bwr.clone());
         }
         if let ParsedHeader::Bridge(_) = &parsed.header {
-            // Re-serialize strictly the header line if needed, but for now we just
-            // trust we can reflect it.
             self.last_bridge_state = Some(format!("{:?}", parsed.header));
         }
 
         match parsed.artifact {
             TerminalArtifact::Halt(reason) => {
-                // If this is a validation intercept, spec requires we echo [STATE] and [BWR].
                 if reason.contains("VALIDATION INTERCEPT") {
                     let bwr_str = self.last_bwr.as_deref().unwrap_or("NONE");
                     let state_str = self.last_bridge_state.as_deref().unwrap_or("NONE");
@@ -209,6 +214,13 @@ impl K4Engine {
                     HeaderKind::Controller => PromptRole::Controller,
                     HeaderKind::Paradox    => PromptRole::Paradox,
                 };
+                self.mode = StepMode::ExpectUser;
+                JsCommand::AwaitUser { text }
+            }
+            
+            // NEW: Diverging lens intercept
+            TerminalArtifact::HeldParadoxes(text) => {
+                self.last_role = PromptRole::Paradox;
                 self.mode = StepMode::ExpectUser;
                 JsCommand::AwaitUser { text }
             }
@@ -243,7 +255,7 @@ impl K4Engine {
             TerminalArtifact::PossibilityMap(_content) => {
                 self.mode = StepMode::ExpectUser;
                 JsCommand::AwaitUser {
-                    text: "# POSSIBILITY MAP\n(map returned — see conversation)".to_string(),
+                    text: "# POSSIBILITY MAP\n(Map returned — operator may now commit via Routing Request)".to_string(),
                 }
             }
 
@@ -290,7 +302,6 @@ impl K4Engine {
         let face = header.current_face.unwrap_or(Pole::P);
         let mut current_state = self.current_state.as_ref().unwrap().clone();
         
-        // Dimensional Fork: Push (2D surface) vs Hold (3D sandbox)
         if current_state.held_role == HeldRole::Material {
             let run_id = format!("Run_{}", current_state.cycle);
             let filename = format!("{}_face.md", face);
@@ -301,9 +312,7 @@ impl K4Engine {
         
         self.current_state = Some(current_state.clone());
 
-        let cycle_complete = self.is_cycle_complete(&current_state);
-
-        if cycle_complete {
+        if self.is_cycle_complete(&current_state) {
             self.vfs.write_ptr(&current_state, &self.surface, ThreadAction::Continue, None);
             JsCommand::Success { message: "Cycle complete. PTR written.".to_string() }
         } else {
@@ -314,60 +323,38 @@ impl K4Engine {
     }
 
     fn compile_validator_prompt(&self, user_input: &str) -> String {
-        format!(
-            "[SYSTEM BINDING]\n\
-             You are the K4-AlgebraicIntakeValidator. You gate and route.\n\
-             [FOUNDATIONAL LEXICON]\n\
-             - Bounded Frame: Has a metabolic budget. Pays for what it does.\n\
-             - Payability/Debt-noun: Which frame pays for this word? No payer = debt.\n\
-             - Markov Blanket: You are the K3 boundary separating interior from exterior.\n\
-             - Misrouting: P-claim assigned as R-claim across documents. (Shear).\n\n\
-             GATE A: Binding Check. Locate the 4 poles, 12 equations, dual-binary seed in context.\n\
-             GATE B: Submission Check. Check unified submission (Doc 0-N) for debt-nouns, misrouting.\n\n\
-             Emit exactly: [STATE] header, [COMPUTATION] block, one TERMINAL ARTIFACT.\n\
-             [STATE] GATE: A | KA: bound | KB: clean | ROUTE: bridge\n\n\
-             # SUBMISSION\n{}",
-            user_input
-        )
+        format!("{}\n\n# SUBMISSION\n{}", PROMPT_VALIDATOR, user_input)
     }
 
     fn compile_bridge_prompt(&self, payload: &str) -> String {
+        // The Missing Handoff: Computing the Gray-code adjacencies from the Braid
+        let (last_stance, legal_facets) = self.vfs.get_braid_context();
+        let stance_str = last_stance.map_or("NONE".to_string(), |s| s.equation_name().to_string());
+        let facets_str = if legal_facets.len() == 12 { "ALL".to_string() } else { format!("{:?}", legal_facets) };
+        
         format!(
-            "[SYSTEM BINDING]\n\
-             You are the K4-AlgebraicIntentBridge. Achieve witnessed phase-lock across the shared circuit.\n\
-             Refusals: No Theory of Mind. No Panopticon frequency. No debt-noun vocabulary.\n\
-             [THE HARNESS]\n\
-             P (Fire): Active+Asserting. U (Air): Active+Yielding. I (Water): Reactive+Yielding. R (Earth): Reactive+Asserting.\n\
-             Read the AC parameters: theta (phase direction), rho (coherence score).\n\
-             Emit exactly: [STATE] header, [BWR] block with LiveProbe/Map, [COMPUTATION], one TERMINAL ARTIFACT.\n\
-             Artifacts: Facet Articulation | Complementary Reactance | Triune Presentation | Diagonal Confrontation | SWARM INITIALIZATION PAYLOAD\n\n\
-             # ROUTING REQUEST\n{}",
-            payload
+            "{}\n\n[BRAID-CONTEXT: last-stance {} | legal-facets {}]\n\n# ROUTING REQUEST\n{}",
+            PROMPT_BRIDGE, stance_str, facets_str, payload
         )
     }
 
     fn compile_controller_prompt(&self, payload: &str) -> String {
-        format!(
-            "[SYSTEM BINDING]\n\
-             You are the K4-AlgebraicSwarmController. You drive. You do not manage personas.\n\
-             [GRAIN LEDGER RULES]\n\
-             SPEC = Binding constraint. MATERIAL = Object of work (Hold role). Nil = Off-plane (Push role).\n\
-             Ingest the SWARM INITIALIZATION PAYLOAD. Resolve C1, C2, C3. Emit C4 DISPATCH.\n\
-             Emit exactly: [STATE] header, [COMPUTATION], TERMINAL ARTIFACT (FACE-RUNNER PROMPT).\n\n\
-             # PAYLOAD\n{}",
-            payload
-        )
+        format!("{}\n\n# PAYLOAD\n{}", PROMPT_CONTROLLER, payload)
     }
 
     fn compile_paradox_prompt(&self, payload: &str) -> String {
-        format!(
-            "[SYSTEM BINDING]\n\
-             You are the K4-ParadoxEngine. Hold adjacent structure open. Do not converge.\n\
-             Geometric Adjacency Law: Adjacency is (face, metric) lookup, never bit-flip.\n\
-             Emit exactly: [STATE] header, [COMPUTATION] (the enumeration), TERMINAL ARTIFACT (Held Paradoxes | POSSIBILITY MAP).\n\n\
-             # REQUEST\n{}",
-            payload
-        )
+        // P-ROOM Recursion handler: If the payload is a user reply (E3), we wrap it 
+        // in E3 instructions rather than blindly appending.
+        if self.last_role == PromptRole::Paradox {
+            format!(
+                "{}\n\n[E3 RECOGNITION READ]\nThe operator responded to the Held Paradoxes:\n\"{}\"\n\
+                 If they 'ring' on a tension, step to P-ROOM (shift AT, increment RUNG, enumerate from there).\n\
+                 If 'clang', offer next, or E-EXIT with Possibility Map.",
+                PROMPT_PARADOX, payload
+            )
+        } else {
+            format!("{}\n\n# REQUEST\n{}", PROMPT_PARADOX, payload)
+        }
     }
 
     fn compile_role_prompt(&mut self, role: PromptRole, payload: &str) -> String {
@@ -405,7 +392,6 @@ impl K4Engine {
     }
 
     fn is_cycle_complete(&self, _state: &ControllerHeader) -> bool {
-        // C8 stub implementation. In reality, check payload termination criteria.
         true
     }
 
@@ -417,4 +403,3 @@ impl K4Engine {
         to_value(&cmd).unwrap_or(JsValue::NULL)
     }
 }
-

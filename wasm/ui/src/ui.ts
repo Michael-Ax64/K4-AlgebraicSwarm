@@ -6,8 +6,9 @@ import {
   currentRole, currentMode,
   UIState, CurrentRole, CorpusDocument,
 } from './state';
-import { processSubmission } from './bridge';
+import { submitLlmPaste, processSubmission } from './bridge';
 import { clearVfs } from './persistence';
+
 
 const chatContainer = requireEl('chat-log');
 const inputForm = requireEl<HTMLFormElement>('input-form');
@@ -30,16 +31,64 @@ function requireEl<T extends HTMLElement = HTMLElement>(id: string): T {
   return el as T;
 }
 
+// Update placeholder logic to handle paste mode
+const placeholders = (role: CurrentRole): Record<UIState, string> => ({
+  idle:               'Enter your intent or Document 0…',
+  processing:         'Computing topology…',
+  awaiting_user:      awaitPlaceholders[role],
+  awaiting_llm_paste: 'PASTE LLM OUTPUT HERE...',
+  halted:             'Run halted. Reset to continue.',
+});
+
+// Update Chat Log Renderer to support Copy UI
 createEffect(() => {
   const messages = chatLog.value;
   chatContainer.replaceChildren(...messages.map(msg => {
     const div = document.createElement('div');
     div.className = `msg msg-${msg.role}`;
-    div.textContent = msg.text;
+    
+    if (msg.role === 'prompt_to_copy') {
+      const header = document.createElement('div');
+      header.className = 'prompt-header';
+      header.innerHTML = `<strong>⚠️ MANUAL MODE: COPY PROMPT</strong><br>Run this in your LLM and paste the output below.`;
+      
+      const pre = document.createElement('pre');
+      pre.textContent = msg.text;
+      
+      const copyBtn = document.createElement('button');
+      copyBtn.textContent = 'Copy to Clipboard';
+      copyBtn.onclick = () => navigator.clipboard.writeText(msg.text);
+      
+      div.appendChild(header);
+      div.appendChild(pre);
+      div.appendChild(copyBtn);
+    } else {
+      div.textContent = msg.text;
+    }
     return div;
   }));
   chatContainer.scrollTop = chatContainer.scrollHeight;
 });
+
+// Update the Submit Handler to fork based on State
+inputForm.addEventListener('submit', (e) => {
+  e.preventDefault();
+  const text = inputField.value.trim();
+  if (!text) return;
+  inputField.value = '';
+  
+  if (uiState.value === 'awaiting_llm_paste') {
+    void submitLlmPaste(text);
+  } else {
+    let docs: CorpusDocument[] = corpusDocs.value;
+    if (corpusInput && corpusInput.value.trim()) {
+      docs = [{ name: 'Attached_Corpus', content: corpusInput.value.trim() }];
+      corpusInput.value = '';
+    }
+    void processSubmission(text, docs);
+  }
+});
+
 
 const awaitPlaceholders: Record<CurrentRole, string> = {
   Validator:  "Reply to the Validator…",

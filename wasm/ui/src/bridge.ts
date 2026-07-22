@@ -1,12 +1,9 @@
 // wasm/ui/src/bridge.ts
-//
+
 // ─── L6 INVERSION OF CONTROL (IoC) PATTERN ─────────────────────
 // The Wasm Engine (Rust) acts as the OS Kernel and Ledger (R/P). 
 // It does not call the LLM directly. It yields its Angular Frequency (ω) 
 // to the TypeScript host environment (the Event Loop / Relational Flow, I).
-// The Engine registers a `FetchLLM` command and waits. The TS host executes
-// the LLM API call (the uncollapsed potential Q) and invokes the engine's step.
-// This is the literal architectural translation of "Don't call us, we'll call you."
 // ───────────────────────────────────────────────────────────────
 
 import {
@@ -15,42 +12,107 @@ import {
   currentRole, currentMode,
   Pole, SlotState, EngineHeader, SurfaceSlot, PtrSummary, HeldRole, ThreadAction, CorpusDocument
 } from './state';
-import { create_engine_with_state, K4Engine } from 'k4-manifold';
+import { activeWorldConfig, getActiveVocabContext } from './ledger/grid-state';
 import { loadVfs, persistVfs } from './persistence';
+
+// Type-only import: Safely stripped at compile time. Won't crash if Wasm is unbuilt.
+import type { K4Engine } from 'k4-manifold'; 
 
 declare function callYourLLMProvider(prompt: string): Promise<string>;
 
-const engine: K4Engine = create_engine_with_state(loadVfs());
-syncEngineState();
+// ─── THE AIRLOCK (Dynamic Wasm Fallback) ───────────────────────
+let engine: any; 
 
-// Renamed from processInput to support D0 + D1..N
+try {
+  // Attempt to dynamically load the compiled WebAssembly module
+  // (We hide the string in a variable so strict bundlers don't hard-fail the build if the folder is empty)
+  const moduleName = 'k4-manifold';
+  const wasm = await import(/* @vite-ignore */ moduleName);
+  engine = wasm.create_engine_with_state(loadVfs());
+  console.log("🟢 [Airlock] Rust K4 Engine coupled successfully.");
+} catch (err) {
+  // If Wasm is uncompiled, missing, or fails to instantiate, boot the Stub
+  console.warn("🟠 [Airlock] Wasm Engine unavailable. Booting Integrity Stub.", err);
+  const stub = await import('./engine-stub');
+  engine = stub.create_engine_with_state(loadVfs());
+}
+
+// Sync the initial state to the UI regardless of which engine booted
+syncEngineState();
+// ───────────────────────────────────────────────────────────────
+
+// ─── Entry Point 1: Text Submission ────────────────────────────
 export async function processSubmission(doc0Text: string, docs: CorpusDocument[]): Promise<void> {
   chatLog.value = [...chatLog.value, { role: 'user', text: doc0Text }];
   uiState.value = 'processing';
 
-  // Pack the corpus as JSON to cross the Wasm boundary
+  // Fetch the Nouns (The Client's Vocabulary for this specific Level)
+  const levelVocabulary = getActiveVocabContext();
+
+  // Weave the Nouns into the Prompt
+  // We are formally telling the LLM: "Here are the variables mapped to the K4 poles."
+  const enrichedDoc0 = `
+[CONTEXTUAL DICTIONARY - LEVEL SPECIFIC]
+${levelVocabulary}
+
+[OPERATOR INTENT]
+${doc0Text}
+  `.trim();
+
   const corpusJson = JSON.stringify(docs.map(d => [d.name, d.content]));
   
-  // Call the new step_submission signature
-  let command = engine.step_submission(doc0Text, corpusJson);
+  // Hand the enriched package to the Rust Kernel (The Verbs)
+  let command = engine.step_submission(enrichedDoc0, corpusJson);
   syncEngineState();
+  
+  await runEngineLoop(command);
+}
+
+// ─── Entry Point 2: Manual LLM Paste ───────────────────────────
+export async function submitLlmPaste(llmResponseText: string): Promise<void> {
+  chatLog.value = [...chatLog.value, { role: 'user', text: "(Pasted LLM Output)" }];
+  uiState.value = 'processing';
+
+  let command = engine.step(llmResponseText);
+  syncEngineState();
+  
+  await runEngineLoop(command);
+}
+
+// ─── The Core State Machine Loop ───────────────────────────────
+async function runEngineLoop(initialCommand: any) {
+  let command = initialCommand;
 
   while (command) {
     switch (command.type) {
+      
       case 'FetchLLM': {
-        let llmResponse: string;
+        const config = activeWorldConfig.value;
+        
+        // MANUAL MODE FALLBACK (The Airlock)
+        if (!config || config.apiProvider === 'manual' || !config.apiKey) {
+          chatLog.value = [...chatLog.value, { 
+            role: 'prompt_to_copy', 
+            text: command.prompt 
+          }];
+          uiState.value = 'awaiting_llm_paste';
+          return; // Pause the engine loop. Wait for user paste.
+        }
+
+        // AUTOMATIC API MODE
         try {
-          llmResponse = await callYourLLMProvider(command.prompt);
+          const llmResponse = await callStandardLLM(config, command.prompt);
+          command = engine.step(llmResponse);
+          syncEngineState();
         } catch (err) {
           chatLog.value = [...chatLog.value, {
             role: 'error',
-            text: `LLM fetch failed: ${err instanceof Error ? err.message : String(err)}. Engine state preserved; try again.`,
+            text: `API failed: ${err instanceof Error ? err.message : String(err)}. Falling back to manual mode.`
           }];
-          uiState.value = 'idle';
+          chatLog.value = [...chatLog.value, { role: 'prompt_to_copy', text: command.prompt }];
+          uiState.value = 'awaiting_llm_paste';
           return;
         }
-        command = engine.step(llmResponse);
-        syncEngineState();
         break;
       }
 
@@ -70,17 +132,35 @@ export async function processSubmission(doc0Text: string, docs: CorpusDocument[]
         return;
 
       default:
-        chatLog.value = [...chatLog.value, {
-          role: 'error',
-          text: `Unknown command type: ${JSON.stringify(command)}`,
-        }];
+        chatLog.value = [...chatLog.value, { role: 'error', text: `Unknown command: ${JSON.stringify(command)}` }];
         uiState.value = 'halted';
         return;
     }
   }
 }
 
-// ─── Engine → signals sync ─────────────────────────────────────
+// ─── Basic OpenAI Compatible Fetch Wrapper ─────────────────────
+async function callStandardLLM(config: any, prompt: string): Promise<string> {
+  const url = config.apiBaseUrl || "https://api.openai.com/v1/chat/completions";
+  const res = await fetch(url, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      "Authorization": `Bearer ${config.apiKey}`
+    },
+    body: JSON.stringify({
+      model: "gpt-4o", // Or user-configurable
+      messages: [{ role: "system", content: prompt }],
+      temperature: 0.2 // Low temp for rigid structural adherence
+    })
+  });
+
+  if (!res.ok) throw new Error(`HTTP ${res.status}: ${await res.text()}`);
+  const data = await res.json();
+  return data.choices[0].message.content;
+}
+
+// ─── Engine → Signals Sync ─────────────────────────────────────
 
 interface VfsShape {
   braid: {

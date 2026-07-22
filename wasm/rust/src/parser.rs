@@ -1,3 +1,5 @@
+// wasm/rust/src/parser.rs
+
 //! # Parser — the message-boundary airlock
 //!
 //! The four K4 specs describe four instruments that take turns operating on a
@@ -54,6 +56,7 @@ pub enum TerminalArtifact {
     FaceRunnerPrompt(String),
     PhaseTransitionRecord(String),
     PossibilityMap(String),
+    HeldParadoxes(String), // Enables the interactive pause for the Paradox Engine
     PlainText(String),
 }
 
@@ -407,6 +410,11 @@ impl K4Parser {
         if let Some(idx) = text.find("# SWARM INITIALIZATION PAYLOAD") { return Ok(TerminalArtifact::SwarmPayload(text[idx..].to_string())); }
         if let Some(idx) = text.find("# PHASE TRANSITION RECORD") { return Ok(TerminalArtifact::PhaseTransitionRecord(text[idx..].to_string())); }
         if let Some(idx) = text.find("# POSSIBILITY MAP") { return Ok(TerminalArtifact::PossibilityMap(text[idx..].to_string())); }
+        
+        // CATCHING THE PARADOX ENGINE'S INTERACTIVE PAUSE
+        if let Some(idx) = text.find("# HELD PARADOXES") { return Ok(TerminalArtifact::HeldParadoxes(text[idx..].to_string())); }
+        if text.contains("Which of these is already bearing weight?") { return Ok(TerminalArtifact::HeldParadoxes(text.trim().to_string())); }
+        
         if text.contains("FACE-RUNNER PROMPT") { return Ok(TerminalArtifact::FaceRunnerPrompt(text.trim().to_string())); }
         Ok(TerminalArtifact::PlainText(text.trim().to_string()))
     }

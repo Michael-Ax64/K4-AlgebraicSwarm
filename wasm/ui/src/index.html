@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>K4 Manifold</title>
+  <title>K4 Manifold | Semantic OS</title>
   <link rel="stylesheet" href="./styles.css">
 </head>
 <body>
@@ -12,39 +12,53 @@
     <div id="status-strip" data-health="cold"></div>
   </header>
 
-  <main class="grid">
-    <section class="chat-column">
-      <div id="chat-log" role="log" aria-live="polite"></div>
-      <form id="input-form">
-        <textarea
-          id="user-input"
-          rows="3"
-          placeholder="Enter your intent or document…"
-          autofocus
-        ></textarea>
-        <div class="button-row">
-          <button id="reset-btn" type="button" title="Clear persisted VFS and reload">reset</button>
-          <button id="submit-btn" type="submit">step →</button>
-        </div>
-      </form>
-    </section>
+  <div id="app-layout">
+    <!-- Column 1: Relational VFS Navigation -->
+    <aside id="ledger-sidebar"></aside>
+    
+    <!-- Column 2: Workbench Grid -->
+    <main id="ledger-main">
+      <div id="ledger-tabs"></div>
+      <div id="ledger-grid-body"></div>
+    </main>
 
-    <aside class="side-column">
-      <section class="panel">
+    <!-- Column 3: Operations (K4 State + Terminal) -->
+    <aside class="ops-column">
+      
+      <!-- Top Half: K4 Surface & Braid -->
+      <div class="k4-state-panel">
         <div class="panel-head">
           <h3>Working Surface</h3>
           <span id="thread-indicator" class="thread-id">no active thread</span>
         </div>
         <div id="working-surface" class="surface-grid"></div>
+        
+        <div class="panel-head" style="border-top: 1px solid var(--line); margin-top: 0.5rem;">
+          <h3>Braid History</h3>
+        </div>
+        <div id="braid-history" class="braid-list"></div>
+      </div>
+
+      <!-- Bottom Half: Agentic Terminal -->
+      <section class="chat-panel">
+        <div class="panel-head">
+          <h3>Agentic Terminal</h3>
+        </div>
+        <div id="chat-log" role="log" aria-live="polite"></div>
+        <form id="input-form">
+          <textarea id="user-input" rows="2" placeholder="Enter intent or Document 0…" autofocus></textarea>
+          <textarea id="corpus-input" rows="2" placeholder="Attach Corpus Documents (D1..N)..."></textarea>
+          <div class="button-row">
+            <button id="reset-btn" type="button" title="Clear VFS and reload">Reset</button>
+            <button id="submit-btn" type="submit">Compile →</button>
+          </div>
+        </form>
       </section>
 
-      <section class="panel">
-        <h3>Braid History</h3>
-        <div id="braid-history" class="braid-list"></div>
-      </section>
     </aside>
-  </main>
+  </div>
 
   <script type="module" src="./src/ui.ts"></script>
+  <script type="module" src="./src/ledger/ledger-ui.ts"></script>
 </body>
 </html>
