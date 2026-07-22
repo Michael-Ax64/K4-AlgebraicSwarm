@@ -24,6 +24,10 @@ export class K4EngineStub {
     }
   }
 
+  set_domain_context(context: string): void {
+    // No-op for the stub. Mimics the Wasm interface.
+  }
+
   step(input: string): any {
     return this.mockResponse(input);
   }

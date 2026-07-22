@@ -22,6 +22,7 @@ export async function seedDatabaseIfEmpty(): Promise<void> {
       apiProvider: 'manual', // Default to manual so the airlock exercises the copy/paste path first
       apiKey: '',
       apiBaseUrl: '',
+      persistCorpus: wData.persistCorpus ?? true, // Default to true
       createdAt: now,
       updatedAt: now,
     };

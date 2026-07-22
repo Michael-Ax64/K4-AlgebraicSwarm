@@ -5,8 +5,11 @@ import {
   selectedWorldId, selectedLevelId, activeTab, activeWorldConfig, LedgerTab,
   addVocabTerm, addCorpusDoc, deleteCorpusDoc
 } from './grid-state';
+
 import { vfsDb } from './fs';
 import { K4Type, ElementRole } from './schema';
+import { autoMapDomain, compileOntology, buildOntologyPrompt, parseAndSaveOntology } from './ontology-compiler';
+
 
 function requireEl<T extends HTMLElement = HTMLElement>(id: string): T {
   const el = document.getElementById(id);
@@ -103,44 +106,58 @@ createEffect(() => {
   else if (tab === 'settings') renderSettings();
 });
 
+
 function renderSettings() {
-  const activeW = activeWorldConfig.value;
-  if (!activeW) return;
-  
-  const card = el('div', { className: 'circuit-card' });
-  card.style.maxWidth = '500px';
+    const activeW = activeWorldConfig.value;
+    if (!activeW) return;
 
-  const providerSelect = el('select', {}, [
-    el('option', { value: 'manual', textContent: 'Manual (Copy/Paste)', selected: activeW.apiProvider === 'manual' }),
-    el('option', { value: 'openai', textContent: 'OpenAI', selected: activeW.apiProvider === 'openai' }),
-    el('option', { value: 'custom', textContent: 'Custom / Local', selected: activeW.apiProvider === 'custom' })
-  ]);
-  
-  const keyInput = el('input', { type: 'password', value: activeW.apiKey || '' });
-  const urlInput = el('input', { type: 'text', value: activeW.apiBaseUrl || '', placeholder: 'https://api.openai.com/v1/chat/completions' });
-  
-  const saveBtn = el('button', { textContent: 'Save Configuration' });
-  saveBtn.addEventListener('click', async () => {
-    const updatedWorld = {
-      ...activeW,
-      apiProvider: providerSelect.value as any,
-      apiKey: keyInput.value,
-      apiBaseUrl: urlInput.value,
-      updatedAt: Date.now()
-    };
-    await vfsDb.upsertWorld(updatedWorld);
-    activeWorldConfig.value = updatedWorld;
-  });
+    const card = el('div', { className: 'circuit-card' });
+    card.style.maxWidth = '500px';
 
-  card.append(
-    el('h4', { textContent: 'World API Configuration' }),
-    el('label', { textContent: 'Provider:' }), el('br'), providerSelect, el('br'), el('br'),
-    el('label', { textContent: 'API Key:' }), el('br'), keyInput, el('br'), el('br'),
-    el('label', { textContent: 'Base URL (Optional):' }), el('br'), urlInput, el('br'), el('br'),
-    saveBtn
-  );
-  gridBodyEl.appendChild(card);
+    const providerSelect = el('select', {}, [
+        el('option', { value: 'manual', textContent: 'Manual (Copy/Paste)', selected: activeW.apiProvider === 'manual' }),
+        el('option', { value: 'auto', textContent: 'Auto (Built-in AI / Local)', selected: activeW.apiProvider === 'auto' }),
+        el('option', { value: 'openai', textContent: 'OpenAI', selected: activeW.apiProvider === 'openai' }),
+        el('option', { value: 'custom', textContent: 'Custom / Local', selected: activeW.apiProvider === 'custom' })
+    ]);
+
+    const keyInput = el('input', { type: 'password', value: activeW.apiKey || '' });
+    const urlInput = el('input', { type: 'text', value: activeW.apiBaseUrl || '', placeholder: 'https://api.openai.com/v1/chat/completions' });
+    
+    // Global Corpus Persistence Toggle
+    const persistCheck = el('input', { type: 'checkbox', checked: activeW.persistCorpus });
+    const persistLabel = el('label', { textContent: ' Persist Corpus Documents to IndexedDB' });
+    persistLabel.style.cursor = 'pointer';
+    persistLabel.addEventListener('click', () => { persistCheck.checked = !persistCheck.checked; });
+
+    const saveBtn = el('button', { textContent: 'Save Configuration' });
+    saveBtn.addEventListener('click', async () => {
+        const updatedWorld = {
+            ...activeW,
+            apiProvider: providerSelect.value as any,
+            apiKey: keyInput.value,
+            apiBaseUrl: urlInput.value,
+            persistCorpus: persistCheck.checked,
+            updatedAt: Date.now()
+        };
+        await vfsDb.upsertWorld(updatedWorld);
+        activeWorldConfig.value = updatedWorld;
+        alert('Configuration saved.');
+    });
+
+    card.append(
+        el('h4', { textContent: 'World API Configuration' }),
+        el('label', { textContent: 'Provider:' }), el('br'), providerSelect, el('br'), el('br'),
+        el('label', { textContent: 'API Key:' }), el('br'), keyInput, el('br'), el('br'),
+        el('label', { textContent: 'Base URL (Optional):' }), el('br'), urlInput, el('br'), el('br'),
+        el('hr'),
+        el('h4', { textContent: 'Thermodynamic Environment' }),
+        el('div', { style: 'display: flex; align-items: center; gap: 0.5rem; margin-bottom: 1rem;' }, [persistCheck, persistLabel]),
+        saveBtn
+    );
+    gridBodyEl.appendChild(card);
 }
+
 
 function renderVocabGrid() {
   const table = el('table');
@@ -178,11 +195,67 @@ function renderVocabGrid() {
     if (term) await addVocabTerm(term, k4Select.value as K4Type, roleSelect.value as ElementRole);
   });
 
-  table.appendChild(el('tr', {}, [
-    el('td', {}, [termInput]), el('td', {}, [k4Select]), el('td', {}, [roleSelect]), el('td', {}, [addBtn])
-  ]));
+  // table.appendChild(el('tr', {}, [
+  //   el('td', {}, [termInput]), el('td', {}, [k4Select]), el('td', {}, [roleSelect]), el('td', {}, [addBtn])
+  // ]));
 
-  gridBodyEl.appendChild(table);
+  // gridBodyEl.appendChild(table);
+
+  
+  // Auto-Map Workspace
+  const autoMapContainer = el('div', { className: 'circuit-card', style: 'margin-top: 2rem;' }, [
+    el('h4', { textContent: 'Auto-Map via Algebraic Sweeps' }),
+    el('p', { className: 'subtext', textContent: 'Enter 4 raw domain concepts. The machine will test them against the 12 equations (grouped by x + [0,3,6,9]) to determine the exact P, U, I, R topology.' })
+  ]);
+
+  const rawInput = el('input', { type: 'text', placeholder: 'e.g. Plot, Character, Dialogue, Pacing', style: 'width: 70%; margin-right: 1rem;' });
+  const mapBtn = el('button', { textContent: 'Run Test-Cycle' });
+  const auditLog = el('div', { className: 'diagnostic-alert', style: 'display: none; margin-top: 1rem; font-family: monospace; font-size: 0.85rem;' });
+
+  mapBtn.addEventListener('click', async () => {
+    const terms = rawInput.value.split(',').map(t => t.trim()).filter(t => t.length > 0);
+    if (terms.length !== 4) {
+      alert("Please provide exactly 4 comma-separated terms.");
+      return;
+    }
+
+    mapBtn.disabled = true;
+    mapBtn.textContent = 'Running Sweeps...';
+    auditLog.style.display = 'block';
+    auditLog.className = 'diagnostic-alert';
+    auditLog.textContent = 'Executing 6-cell swap test across the Linear, Leverage, and Friction planes...';
+
+    try {
+      const result = await autoMapDomain(activeWorldConfig.value!, terms);
+      
+      // Render the Algebraic Proof
+      auditLog.classList.add('diag-resonance'); // Green highlight
+      auditLog.innerHTML = `
+        <strong>Anchor Fixed:</strong> ${result.anchor.term} -> ${result.anchor.pole} (${result.anchor.reason})<br><br>
+        <strong>Testing Contested Swap:</strong> ${result.contestedSwap.termA} vs ${result.contestedSwap.termB}<br>
+        - <em>Sweep 1 (x=1, Linear):</em> ${result.sweepAudit.sweep1_Linear}<br>
+        - <em>Sweep 2 (x=2, Leverage):</em> ${result.sweepAudit.sweep2_Leverage}<br>
+        - <em>Sweep 3 (x=3, Friction):</em> ${result.sweepAudit.sweep3_Friction}<br><br>
+        <strong>Resolution:</strong> ${result.resolution}<br><br>
+        <strong>Final Mapping:</strong> P=${result.finalMapping.P}, U=${result.finalMapping.U}, I=${result.finalMapping.I}, R=${result.finalMapping.R}
+      `;
+
+      // Save the mapped terms directly to the VFS
+      for (const [pole, term] of Object.entries(result.finalMapping)) {
+        await addVocabTerm(term, pole as any, pole === 'P' || pole === 'R' ? 'SPEC' : 'MATERIAL');
+      }
+
+      mapBtn.textContent = 'Mapping Complete';
+    } catch (err: any) {
+      auditLog.classList.add('diag-lagging'); // Red highlight
+      auditLog.textContent = `Algebraic Sweep Failed: ${err.message}`;
+      mapBtn.disabled = false;
+      mapBtn.textContent = 'Run Test-Cycle';
+    }
+  });
+
+  autoMapContainer.append(rawInput, mapBtn, auditLog);
+  gridBodyEl.appendChild(autoMapContainer);
 }
 
 function renderLedgerGrid() {
@@ -245,16 +318,90 @@ function renderCorpusManager() {
   gridBodyEl.appendChild(container);
 }
 
+//
+
 function renderCircuitWorkbench() {
   const circuits = circuitGrid.value;
+  
   if (circuits.length === 0) { 
-    gridBodyEl.appendChild(el('div', { className: 'empty', textContent: 'No circuits defined.' })); 
+    const emptyState = el('div', { className: 'circuit-card', style: 'max-width: 800px; margin: 0 auto;' });
+    emptyState.appendChild(el('h4', { textContent: 'No Topology Compiled' }));
+    emptyState.appendChild(el('p', { className: 'subtext', textContent: 'The vocabulary is defined. The Algebra must now unfold the 12-facet possibility space.' }));
+    
+    const isManual = activeWorldConfig.value?.apiProvider === 'manual';
+
+    if (isManual) {
+      // THE MANUAL "BRING YOUR OWN LLM" WORKFLOW
+      emptyState.appendChild(el('p', { textContent: 'Manual Mode is active. Copy this prompt to an external LLM (e.g., ChatGPT or Claude), then paste the JSON response below:', style: 'margin-top: 1rem; color: #a3a3a3;' }));
+      
+      const promptStr = buildOntologyPrompt(vocabGrid.value);
+      const promptArea = el('textarea', { readOnly: true, value: promptStr, style: 'width: 100%; height: 120px; font-family: monospace; font-size: 0.85rem; margin-bottom: 0.5rem;' });
+      
+      const copyBtn = el('button', { textContent: '📋 Copy Prompt' });
+      copyBtn.addEventListener('click', () => {
+        navigator.clipboard.writeText(promptStr);
+        copyBtn.textContent = 'Copied!';
+        setTimeout(() => copyBtn.textContent = '📋 Copy Prompt', 2000);
+      });
+
+      const pasteArea = el('textarea', { placeholder: 'Paste the generated JSON here...', style: 'width: 100%; height: 120px; font-family: monospace; font-size: 0.85rem; margin-top: 1rem; margin-bottom: 0.5rem;' });
+      const errorMsg = el('p', { className: 'diagnostic-alert diag-leading', style: 'display: none;' });
+
+      const saveBtn = el('button', { textContent: 'Parse & Save Topology' });
+      saveBtn.addEventListener('click', async () => {
+        if (!pasteArea.value.trim()) return;
+        saveBtn.disabled = true;
+        saveBtn.textContent = 'Processing...';
+        errorMsg.style.display = 'none';
+
+        try {
+          await parseAndSaveOntology(selectedLevelId.value!, pasteArea.value);
+          // Force reload to pull new circuits
+          const lId = selectedLevelId.value;
+          selectedLevelId.value = null; 
+          setTimeout(() => selectedLevelId.value = lId, 50);
+        } catch (err: any) {
+          errorMsg.textContent = `Invalid JSON or Parsing Error: ${err.message}`;
+          errorMsg.style.display = 'block';
+          saveBtn.disabled = false;
+          saveBtn.textContent = 'Parse & Save Topology';
+        }
+      });
+
+      emptyState.append(promptArea, copyBtn, pasteArea, errorMsg, saveBtn);
+
+    } else {
+      // THE AUTOMATED API WORKFLOW
+      const compileBtn = el('button', { textContent: 'Compile 12-Fold Ontology' });
+      const errorMsg = el('p', { className: 'diagnostic-alert diag-lagging', style: 'display: none; margin-top: 1rem;' });
+
+      compileBtn.addEventListener('click', async () => {
+        compileBtn.textContent = 'Compiling Topology (Please Wait)...';
+        compileBtn.disabled = true;
+        errorMsg.style.display = 'none';
+
+        try {
+          await compileOntology(selectedLevelId.value!, activeWorldConfig.value!, vocabGrid.value);
+          const lId = selectedLevelId.value;
+          selectedLevelId.value = null; 
+          setTimeout(() => selectedLevelId.value = lId, 50); 
+        } catch (err: any) {
+          errorMsg.textContent = err.message;
+          errorMsg.style.display = 'block';
+          compileBtn.textContent = 'Compile 12-Fold Ontology';
+          compileBtn.disabled = false;
+        }
+      });
+
+      emptyState.append(compileBtn, errorMsg);
+    }
+    
+    gridBodyEl.appendChild(emptyState);
     return; 
   }
   
-  const c = circuits[0];
+  const c = circuits[0]; // Active circuit loaded into workbench
   
-  // Safe HTML template for the static parts
   gridBodyEl.innerHTML = `
     <div class="circuit-dash">
       <div class="circuit-card" id="ac-inputs">
@@ -266,10 +413,16 @@ function renderCircuitWorkbench() {
         <div class="metric-row"><span>Total Impedance (|Z|)</span> <span id="out-Z">0.00 Ω</span></div>
         <div class="metric-row"><span>Phase Angle (θ)</span> <span id="out-theta">0.00°</span></div>
         <div class="metric-row"><span>Power Factor (cos θ)</span> <span id="out-pf">0.000</span></div>
-        <br>
-        <div class="metric-row"><span>Resonant Freq (ω₀)</span> <span id="out-omega0">0.00 rad/s</span></div>
-        <div class="metric-row"><span>Quality Factor (Q)</span> <span id="out-qfactor">0.00</span></div>
         <div id="diag-box" class="diagnostic-alert"></div>
+      </div>
+      <div class="circuit-card" id="semantic-payload" style="grid-column: 1 / -1;">
+        <h4>Semantic Phenomenological State</h4>
+        <h3 id="sem-name" style="margin: 0.5rem 0; color: var(--p-color);">${c.name}</h3>
+        <p class="subtext"><strong>Diagnostic Signatures:</strong> <span id="sem-vocab">${c.diagnosticVocab?.join(', ') || ''}</span></p>
+        <div class="prompt-workspace" style="display: block; margin-top: 1rem;">
+          <strong>Reward Function (Diagnostic Question):</strong><br>
+          <em id="sem-reward">${c.rewardQuestion || ''}</em>
+        </div>
       </div>
     </div>
   `;
@@ -310,38 +463,39 @@ function renderCircuitWorkbench() {
     document.getElementById('out-Z')!.textContent = `${Z.toFixed(2)} Ω`;
     document.getElementById('out-theta')!.textContent = `${thetaDeg.toFixed(2)}°`;
     document.getElementById('out-pf')!.textContent = Math.cos(thetaRad).toFixed(3);
-    document.getElementById('out-omega0')!.textContent = `${(1 / Math.sqrt(L * C)).toFixed(2)} rad/s`;
-    document.getElementById('out-qfactor')!.textContent = ((1 / R) * Math.sqrt(L / C)).toFixed(2);
     
     const diagBox = document.getElementById('diag-box')!;
     diagBox.className = 'diagnostic-alert';
+
+    // UI Logic to snap to the closest algebraic Circuit based on sliders
+    // This connects the AC parameters back to the generated JSON!
+    let activeIndex = 0; // Default to 1. Synthesis
+    if (thetaDeg > 70 && R > 80 && omega < 2) activeIndex = 9;       // 10. Impedance (Analysis Paralysis)
+    else if (thetaDeg > 45 && R > 40 && omega > 10) activeIndex = 2; // 3. Momentum (Brute Force)
+    else if (thetaDeg < -45 && R > 100) activeIndex = 11;            // 12. Brittleness (Burnout)
+    else if (Math.abs(thetaDeg) < 5) activeIndex = 5;                // 6. Resonance
+
+    // Update the Semantic Payload display dynamically
+    const activeCircuit = circuits[activeIndex] || circuits[0];
+    document.getElementById('sem-name')!.textContent = activeCircuit.name;
+    document.getElementById('sem-vocab')!.textContent = activeCircuit.diagnosticVocab?.join(', ') || '';
+    document.getElementById('sem-reward')!.textContent = activeCircuit.rewardQuestion || '';
+
     if (Math.abs(thetaDeg) < 5) {
       diagBox.classList.add('diag-resonance');
-      diagBox.textContent = 'RESONANCE ACHIEVED. Markov Blanket is transparent. Optimal Trajectory Contact.';
+      diagBox.textContent = 'RESONANCE ACHIEVED. Markov Blanket transparent.';
     } else if (thetaDeg > 5) {
       diagBox.classList.add('diag-lagging');
-      diagBox.textContent = `TORSIONAL SHEAR (Lagging). Dominated by Inductive Memory. High I²R exhaust.`;
+      diagBox.textContent = `TORSIONAL SHEAR (Lagging). Inductive Memory dominant.`;
     } else {
       diagBox.classList.add('diag-leading');
-      diagBox.textContent = `TORSIONAL SHEAR (Leading). Paralyzed by Capacitive Anticipation. High Q circulation.`;
+      diagBox.textContent = `TORSIONAL SHEAR (Leading). Capacitive Anticipation dominant.`;
     }
-  };
-
-  const saveAC = async () => {
-    if (circuitGrid.value.length === 0) return;
-    await vfsDb.upsertCircuitState({
-      ...circuitGrid.value[0],
-      drivingOmega: parseFloat(omegaS.input.value),
-      resistanceR: parseFloat(rS.input.value),
-      inductanceL: parseFloat(lS.input.value),
-      capacitanceC: parseFloat(cS.input.value)
-    });
   };
 
   [omegaS, rS, lS, cS].forEach(s => {
     s.input.addEventListener('input', calcAC);
-    s.input.addEventListener('change', saveAC);
   });
 
-  calcAC(); // Init calculation
+  calcAC();
 }

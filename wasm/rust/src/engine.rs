@@ -1,4 +1,5 @@
 // wasm/rust/src/engine.rs
+
 use wasm_bindgen::prelude::*;
 use serde::{Serialize, Deserialize};
 use serde_wasm_bindgen::to_value;
@@ -80,6 +81,7 @@ pub struct K4Engine {
     last_bridge_state: Option<String>,
     mode: StepMode,
     last_role: PromptRole,
+    domain_context: String, // <--- NEW: Rust holds the Domain Matrix
 }
 
 #[wasm_bindgen]
@@ -95,6 +97,7 @@ impl K4Engine {
             last_bridge_state: None,
             mode: StepMode::ColdStart,
             last_role: PromptRole::Validator, 
+            domain_context: String::new(), 
         }
     }
 
@@ -128,6 +131,11 @@ impl K4Engine {
     }
 
     #[wasm_bindgen]
+    pub fn set_domain_context(&mut self, context: &str) {
+        self.domain_context = context.to_string();
+    }
+
+    #[wasm_bindgen]
     pub fn step(&mut self, input: &str) -> JsValue {
         let cmd = self.step_command(input);
         self.to_js(cmd)
@@ -135,6 +143,7 @@ impl K4Engine {
 
     #[wasm_bindgen]
     pub fn step_submission(&mut self, doc0: &str, corpus_json: &str) -> JsValue {
+        // The doc0 string is now PURE user intent, free of TS context hacks
         let mut unified_input = format!("Document 0 (Prompt):\n{}\n\n", doc0);
         
         if let Ok(docs) = serde_json::from_str::<Vec<(String, String)>>(corpus_json) {
@@ -218,7 +227,7 @@ impl K4Engine {
                 JsCommand::AwaitUser { text }
             }
             
-            // NEW: Diverging lens intercept
+            // Diverging lens intercept
             TerminalArtifact::HeldParadoxes(text) => {
                 self.last_role = PromptRole::Paradox;
                 self.mode = StepMode::ExpectUser;
@@ -323,37 +332,44 @@ impl K4Engine {
     }
 
     fn compile_validator_prompt(&self, user_input: &str) -> String {
-        format!("{}\n\n# SUBMISSION\n{}", PROMPT_VALIDATOR, user_input)
+        let ctx = if self.domain_context.is_empty() { String::new() } else { format!("\n\n[CONTEXTUAL DICTIONARY]\n{}", self.domain_context) };
+        // Placed ABOVE # SUBMISSION so it acts as rules, not operator text
+        format!("{}{}\n\n# SUBMISSION\n{}", PROMPT_VALIDATOR, ctx, user_input)
     }
 
     fn compile_bridge_prompt(&self, payload: &str) -> String {
-        // The Missing Handoff: Computing the Gray-code adjacencies from the Braid
+        // Computing the Gray-code adjacencies from the Braid
         let (last_stance, legal_facets) = self.vfs.get_braid_context();
         let stance_str = last_stance.map_or("NONE".to_string(), |s| s.equation_name().to_string());
         let facets_str = if legal_facets.len() == 12 { "ALL".to_string() } else { format!("{:?}", legal_facets) };
         
+        let ctx = if self.domain_context.is_empty() { String::new() } else { format!("\n\n[DOMAIN MATRIX]\n{}", self.domain_context) };
+        
         format!(
-            "{}\n\n[BRAID-CONTEXT: last-stance {} | legal-facets {}]\n\n# ROUTING REQUEST\n{}",
-            PROMPT_BRIDGE, stance_str, facets_str, payload
+            "{}{}\n\n[BRAID-CONTEXT: last-stance {} | legal-facets {}]\n\n# ROUTING REQUEST\n{}",
+            PROMPT_BRIDGE, ctx, stance_str, facets_str, payload
         )
     }
 
     fn compile_controller_prompt(&self, payload: &str) -> String {
-        format!("{}\n\n# PAYLOAD\n{}", PROMPT_CONTROLLER, payload)
+        let ctx = if self.domain_context.is_empty() { String::new() } else { format!("\n\n[DOMAIN MATRIX]\n{}", self.domain_context) };
+        format!("{}{}\n\n# PAYLOAD\n{}", PROMPT_CONTROLLER, ctx, payload)
     }
 
     fn compile_paradox_prompt(&self, payload: &str) -> String {
-        // P-ROOM Recursion handler: If the payload is a user reply (E3), we wrap it 
+        let ctx = if self.domain_context.is_empty() { String::new() } else { format!("\n\n[DOMAIN MATRIX]\n{}", self.domain_context) };
+        
+        // P-ROOM Recursion handler: If the payload is a user reply (E3), wrap it 
         // in E3 instructions rather than blindly appending.
         if self.last_role == PromptRole::Paradox {
             format!(
-                "{}\n\n[E3 RECOGNITION READ]\nThe operator responded to the Held Paradoxes:\n\"{}\"\n\
+                "{}{}\n\n[E3 RECOGNITION READ]\nThe operator responded to the Held Paradoxes:\n\"{}\"\n\
                  If they 'ring' on a tension, step to P-ROOM (shift AT, increment RUNG, enumerate from there).\n\
                  If 'clang', offer next, or E-EXIT with Possibility Map.",
-                PROMPT_PARADOX, payload
+                PROMPT_PARADOX, ctx, payload
             )
         } else {
-            format!("{}\n\n# REQUEST\n{}", PROMPT_PARADOX, payload)
+            format!("{}{}\n\n# REQUEST\n{}", PROMPT_PARADOX, ctx, payload)
         }
     }
 
@@ -378,16 +394,19 @@ impl K4Engine {
             format!("You are operating on the {}-Face (2D K3 plane). [AbsentVar] is nil. Do not treat it as a target.", state.plane)
         };
 
+        let ctx = if self.domain_context.is_empty() { String::new() } else { format!("\n[DOMAIN MATRIX]\n{}\n", self.domain_context) };
+
         format!(
             "[STATE] CYCLE: {} | SEQ: {} | STANCE: {} | PLANE: {}-Face | HELD: {}={:?} | PATH: {} | FACE: {} | RAISES: {}/{} | STATUS: {:?}\n\
              [COMPUTATION]\nSurface read · slot-state resolution\n[/COMPUTATION]\n\
              You are the {} Face. Equations: {}\n\
              {}\n\
+             {}\n\
              SURFACE STATE:\n{}\n\
              [RAISE] SCHEMA: If upstream is STALE, emit: [RAISE] target: <pole> | reason: <stmt>\n\
              Otherwise emit WORK PRODUCT.{}\n",
             state.cycle, state.seq, stance_eq, state.plane, state.stance.absent(), state.held_role, path_str, face, state.raises.0, state.raises.1, state.status,
-            face, stance_eq, dimensional_fork, self.surface.format_for_prompt(), raise_annotation
+            face, stance_eq, dimensional_fork, ctx, self.surface.format_for_prompt(), raise_annotation
         )
     }
 
