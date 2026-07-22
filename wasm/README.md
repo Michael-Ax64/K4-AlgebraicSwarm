@@ -28,19 +28,24 @@ The runtime is governed by the **Algebra of Four-Fold Distinction**.
 
 ---
 
-## 3. Architecture: Inversion of Control (IoC)
+## 3. Inversion of Control: IoC in the Architecture
+
 The runtime is split across a WebAssembly boundary, enforcing a strict **Noun/Verb** separation. The Rust engine *never* calls the LLM directly.
 
 ### The Kernel (`rust/`) — *The Verbs*
-The Wasm engine acts as the OS Kernel and Ledger. It owns the algebraic equations, the Markov blanket airlock (parser), the state machine, and the Landauer Tax enforcer (PTR writer). It yields its Angular Frequency ($\omega$) to the host environment, waiting for the uncollapsed $h\mathbf{Q}$ to be returned for `.observe()` serialization.
-*   **Cold-Start Rule**: The master prompt specifications are compiled *directly into the Wasm binary* via `include_str!`. A blank LLM instance receives the entire algebraic harness inline.
+The Wasm engine acts as the OS Kernel and Ledger.
+It owns the algebraic equations, the Markov blanket airlock (parser), the state machine, and the Landauer Tax enforcer (PTR writer). 
+It yields its Angular Frequency ($\omega$) to the host environment, waiting for the uncollapsed $h\mathbf{Q}$ to be returned for `.observe()` serialization.
+
+*   **Cold-Start Rule**: The master prompt specifications are compiled *directly into the Wasm binary* via `include_str!`.  A blank LLM instance receives the entire algebraic harness inline.
 
 ### The Event Loop (`ui/`) — *The Nouns*
-The TypeScript host manages the 5D Relational Graph (IndexedDB) of Worlds, Levels, Vocabularies, and Circuits. It injects the domain-specific vocabulary into the prompt, executes the LLM API calls, and routes the responses back through the Wasm airlock.
+The TypeScript host manages the 5D Relational Graph (IndexedDB) of Worlds, Levels, Vocabularies, and Circuits. 
+It injects the domain-specific vocabulary into the prompt, executes the LLM API calls, and routes the responses back through the Wasm airlock.
 
 ---
 
-## 4. Repository Structure
+## 4. Files
 
 ```text
 .
@@ -89,13 +94,15 @@ wasm-pack build --target web
 ### 2. Run the UI Host
 Install dependencies and start the local development server. The UI will dynamically load the compiled Wasm module.
 ```bash
-cd ui
+cd ts
 npm install
 npm run dev
 ```
 
 ### 3. Configure a World
-Upon first load, the UI will cold-start the IndexedDB ledger with a seed World. Navigate to the **Settings** tab to configure your LLM provider (OpenAI, Local/Ollama, or Manual Copy/Paste). The TypeScript host will inject the Level-specific vocabulary into the Rust kernel before every submission.
+Upon first load, the UI will cold-start the IndexedDB ledger with a seed World.
+Navigate to the **Settings** tab to configure your LLM provider (OpenAI, Local/Ollama, or Manual Copy/Paste).
+The TypeScript host will inject the Level-specific vocabulary into the Rust kernel before every submission.
 
 ---
 
