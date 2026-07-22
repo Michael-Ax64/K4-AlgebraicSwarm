@@ -1,12 +1,9 @@
-// wasm/ui/src/ledger/fs.ts
+// wasm/ts/src/ledger/fs.ts
 import { World, Level, Vocabulary, CircuitState, LedgerEntry } from './schema';
 
 const DB_NAME = 'K4Manifold_VFS';
 const DB_VERSION = 1;
 
-/**
- * Promise-based wrapper around IndexedDB for the 5D Relational Graph
- */
 class LedgerFS {
   private db: IDBDatabase | null = null;
 
@@ -17,33 +14,28 @@ class LedgerFS {
       request.onupgradeneeded = (event) => {
         const db = (event.target as IDBOpenDBRequest).result;
         
-        // Worlds
         if (!db.objectStoreNames.contains('worlds')) {
           db.createObjectStore('worlds', { keyPath: 'id' });
         }
-        
-        // Levels
         if (!db.objectStoreNames.contains('levels')) {
           const store = db.createObjectStore('levels', { keyPath: 'id' });
           store.createIndex('worldId', 'worldId', { unique: false });
         }
-        
-        // Vocabularies
         if (!db.objectStoreNames.contains('vocabularies')) {
           const store = db.createObjectStore('vocabularies', { keyPath: 'id' });
           store.createIndex('levelId', 'levelId', { unique: false });
         }
-
-        // Circuits
         if (!db.objectStoreNames.contains('circuits')) {
           const store = db.createObjectStore('circuits', { keyPath: 'id' });
           store.createIndex('levelId', 'levelId', { unique: false });
         }
-
-        // Ledger Entries (PTRs)
         if (!db.objectStoreNames.contains('ledger_entries')) {
           const store = db.createObjectStore('ledger_entries', { keyPath: 'id' });
           store.createIndex('circuitId', 'circuitId', { unique: false });
+        }
+        // FIXED: Missing Engine State store added
+        if (!db.objectStoreNames.contains('engine_state')) {
+          db.createObjectStore('engine_state', { keyPath: 'id' });
         }
       };
 
@@ -51,12 +43,10 @@ class LedgerFS {
         this.db = (event.target as IDBOpenDBRequest).result;
         resolve();
       };
-
       request.onerror = (event) => reject((event.target as IDBOpenDBRequest).error);
     });
   }
 
-  // Generic CRUD Helper
   private async runTx<T>(storeName: string, mode: IDBTransactionMode, operation: (store: IDBObjectStore) => IDBRequest): Promise<T> {
     if (!this.db) await this.init();
     return new Promise((resolve, reject) => {
@@ -80,8 +70,6 @@ class LedgerFS {
     });
   }
 
-  // --- API ---
-
   // Worlds
   async getWorlds(): Promise<World[]> { return this.runTx('worlds', 'readonly', s => s.getAll()); }
   async upsertWorld(world: World): Promise<void> { await this.runTx('worlds', 'readwrite', s => s.put(world)); }
@@ -102,7 +90,17 @@ class LedgerFS {
   async getLedgerEntries(circuitId: string): Promise<LedgerEntry[]> { return this.getAllByIndex('ledger_entries', 'circuitId', circuitId); }
   async appendLedgerEntry(entry: LedgerEntry): Promise<void> { await this.runTx('ledger_entries', 'readwrite', s => s.put(entry)); }
 
-  // Danger: Wipe
+  // FIXED: Engine State Methods
+  async getEngineState(): Promise<{id: string, raw: string} | undefined> { 
+    return this.runTx('engine_state', 'readonly', s => s.get('current')); 
+  }
+  async putEngineState(raw: string): Promise<void> { 
+    await this.runTx('engine_state', 'readwrite', s => s.put({ id: 'current', raw })); 
+  }
+  async deleteEngineState(): Promise<void> { 
+    await this.runTx('engine_state', 'readwrite', s => s.delete('current')); 
+  }
+
   async factoryReset(): Promise<void> {
     if (this.db) {
       this.db.close();
@@ -117,4 +115,3 @@ class LedgerFS {
 }
 
 export const vfsDb = new LedgerFS();
-

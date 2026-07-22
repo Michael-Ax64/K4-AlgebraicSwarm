@@ -1,25 +1,24 @@
-// wasm/ui/src/bridge.ts
+// wasm/ts/src/bridge.ts
 import {
   uiState, chatLog, engineHeader, workingSurface, braidHistory, activeThreadId,
   currentRole, currentMode, braidThreads, selectedThreadId, sandboxes, manualPrompt,
-  Pole, SlotState, EngineHeader, SurfaceSlot, PtrSummary, HeldRole, ThreadAction, ThreadShape
+  Pole, SlotState, EngineHeader, SurfaceSlot, PtrSummary, HeldRole, ThreadShape
 } from './state';
 import { activeWorldConfig, getActiveVocabContext, corpusGrid } from './ledger/grid-state';
 import { loadVfs, persistVfs } from './persistence';
 
-import type { K4Engine } from 'k4-manifold';
 declare function callYourLLMProvider(prompt: string): Promise<string>;
 
 let engine: any;
 try {
   const moduleName = 'k4-manifold';
   const wasm = await import(/* @vite-ignore */ moduleName);
-  engine = wasm.create_engine_with_state(loadVfs());
+  engine = wasm.create_engine_with_state(await loadVfs());
   console.log("🟢 [Airlock] Rust K4 Engine coupled successfully.");
 } catch (err) {
   console.warn("🟠 [Airlock] Wasm Engine unavailable. Booting Integrity Stub.", err);
   const stub = await import('./engine-stub');
-  engine = stub.create_engine_with_state(loadVfs());
+  engine = stub.create_engine_with_state(await loadVfs());
 }
 syncEngineState();
 
@@ -103,8 +102,8 @@ async function callStandardLLM(config: any, prompt: string): Promise<string> {
 }
 
 interface VfsShape {
-  braid: { active_thread_id: string | null; threads: Record<string, ThreadShape>; };
-  sandboxes: Record<string, Record<string, string>>;
+  braid?: { active_thread_id: string | null; threads: Record<string, ThreadShape>; };
+  sandboxes?: Record<string, Record<string, string>>;
 }
 
 function syncEngineState(): void {
@@ -115,25 +114,33 @@ function syncEngineState(): void {
   persistVfs(raw);
   
   let vfs: VfsShape;
-  try { vfs = JSON.parse(raw) as VfsShape; } catch (err) { return; }
+  try { 
+    vfs = JSON.parse(raw) as VfsShape; 
+  } catch (err) { 
+    return; 
+  }
 
-  sandboxes.value = vfs.sandboxes || {};
-  braidThreads.value = vfs.braid.threads;
-  activeThreadId.value = vfs.braid.active_thread_id;
+  // FIXED: Defensive Parsing
+  const safeBraid = vfs.braid || { active_thread_id: null, threads: {} };
+  const safeThreads = safeBraid.threads || {};
   
-  if (!selectedThreadId.value && vfs.braid.active_thread_id) {
-    selectedThreadId.value = vfs.braid.active_thread_id;
+  sandboxes.value = vfs.sandboxes || {};
+  braidThreads.value = safeThreads;
+  activeThreadId.value = safeBraid.active_thread_id || null;
+  
+  if (!selectedThreadId.value && safeBraid.active_thread_id) {
+    selectedThreadId.value = safeBraid.active_thread_id;
   }
 
   braidHistory.value = collectPtrs(vfs);
 
-  const activeId = vfs.braid.active_thread_id;
-  const activeThread = activeId ? vfs.braid.threads[activeId] : null;
+  const activeId = safeBraid.active_thread_id;
+  const activeThread = activeId ? (safeThreads[activeId] || null) : null;
   const latest = activeThread?.ptr_latest ?? null;
   
   if (latest) {
     engineHeader.value = ptrToHeader(latest);
-    workingSurface.value = snapshotToSlots(latest.surface_snapshot);
+    workingSurface.value = snapshotToSlots(latest.surface_snapshot || {});
   } else {
     engineHeader.value = null;
     workingSurface.value = emptySurface();
@@ -146,7 +153,7 @@ function ptrToHeader(ptr: any): EngineHeader {
     path: ptr.path_traversed, heldPole: ptr.held_pole, heldRole: normalizeHeldRole(ptr.held_role), health: ptr.health,
   };
 }
-function normalizeHeldRole(raw: string): HeldRole { return raw.toLowerCase() === 'material' ? 'material' : 'nil'; }
+function normalizeHeldRole(raw: string): HeldRole { return raw?.toLowerCase() === 'material' ? 'material' : 'nil'; }
 function snapshotToSlots(snapshot: Record<Pole, { content: string, state: SlotState }>): SurfaceSlot[] {
   return (['P', 'U', 'I', 'R'] as Pole[]).map(pole => ({ pole, content: snapshot[pole]?.content ?? null, state: snapshot[pole]?.state ?? 'Unwritten' }));
 }
@@ -155,7 +162,10 @@ function emptySurface(): SurfaceSlot[] {
 }
 function collectPtrs(vfs: VfsShape): PtrSummary[] {
   const out: PtrSummary[] = [];
-  for (const thread of Object.values(vfs.braid.threads)) {
+  const safeBraid = vfs.braid || { threads: {} };
+  const threads = safeBraid.threads || {};
+  for (const thread of Object.values(threads)) {
+    if (!thread || !thread.history) continue; // Defense against corrupted threads
     for (const ptr of thread.history) {
       out.push({
         threadId: ptr.thread_id, action: ptr.thread_action, cycle: ptr.cycle, finalSeq: ptr.final_seq,

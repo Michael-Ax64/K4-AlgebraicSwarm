@@ -1,17 +1,17 @@
 // wasm/ui/src/ledger/seed.ts
 import { vfsDb } from './fs';
 import { defaultSeedData } from './seed-data';
-import { World, Level, Vocabulary, CircuitState } from './schema'; // Added CircuitState
+import { World, Level, Vocabulary, CircuitState } from './schema';
 
 export async function seedDatabaseIfEmpty(): Promise<void> {
   const existingWorlds = await vfsDb.getWorlds();
-  
+
   if (existingWorlds.length > 0) {
-    console.log("[Ledger] VFS already initialized. Skipping seed.");
+    console.log('[Ledger] VFS already initialized. Skipping seed.');
     return;
   }
 
-  console.log("[Ledger] Cold Start detected. Seeding K4 VFS with default Worlds...");
+  console.log('[Ledger] Cold Start detected. Seeding K4 VFS with default Worlds...');
   const now = Date.now();
 
   for (const wData of defaultSeedData.worlds) {
@@ -19,11 +19,11 @@ export async function seedDatabaseIfEmpty(): Promise<void> {
       id: wData.id,
       name: wData.name,
       description: wData.description,
-      apiProvider: 'manual', // Set default to manual so the airlock tests easily
+      apiProvider: 'manual', // Default to manual so the airlock exercises the copy/paste path first
       apiKey: '',
       apiBaseUrl: '',
       createdAt: now,
-      updatedAt: now
+      updatedAt: now,
     };
     await vfsDb.upsertWorld(world);
 
@@ -33,7 +33,6 @@ export async function seedDatabaseIfEmpty(): Promise<void> {
         worldId: world.id,
         name: lData.name,
         levelIndex: lData.levelIndex,
-        omegaClock: lData.omegaClock
       };
       await vfsDb.upsertLevel(level);
 
@@ -45,12 +44,12 @@ export async function seedDatabaseIfEmpty(): Promise<void> {
           term: vData.term,
           k4Type: vData.k4Type as any,
           role: vData.role as any,
-          description: vData.description
+          description: vData.description,
         };
         await vfsDb.upsertVocabulary(vocab);
       }
 
-      // NEW: Seed Circuits
+      // Seed Circuits
       if (lData.circuits) {
         for (const cData of lData.circuits) {
           const circuit: CircuitState = {
@@ -63,13 +62,13 @@ export async function seedDatabaseIfEmpty(): Promise<void> {
             inductanceL: cData.inductanceL,
             capacitanceC: cData.capacitanceC,
             drivingOmega: cData.drivingOmega,
-            currentCycle: cData.currentCycle
+            currentCycle: cData.currentCycle,
           };
           await vfsDb.upsertCircuitState(circuit);
         }
       }
     }
   }
-  
-  console.log("[Ledger] VFS Seeding Complete.");
+
+  console.log('[Ledger] VFS Seeding Complete.');
 }

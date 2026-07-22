@@ -1,45 +1,44 @@
-// wasm/ui/src/ledger/grid_state.ts
+// wasm/ts/src/ledger/grid-state.ts
 
 import { Signal, createEffect } from '../reactive';
 import { vfsDb } from './fs';
-import { World, Level, Vocabulary, CircuitState, LedgerEntry, K4Type, ElementRole } from './schema';
+import {
+  World, Level, Vocabulary, CircuitState, LedgerEntry,
+  CorpusDocEntry, K4Type, ElementRole,
+} from './schema';
+import { seedDatabaseIfEmpty } from './seed';
 
-// ─── Selection State ─────────────────────────────────────────────
+export type LedgerTab = 'vocab' | 'corpus' | 'circuit' | 'ledger' | 'settings';
+
 export const activeWorldConfig = new Signal<World | null>(null);
-
 export const selectedWorldId = new Signal<string | null>(null);
 export const selectedLevelId = new Signal<string | null>(null);
-export const activeTab = new Signal<'vocab' | 'circuit' | 'ledger'>('vocab');
+export const activeTab = new Signal<LedgerTab>('vocab');
 
-// ─── Data Signals (The Live Grids) ───────────────────────────────
 export const worldsGrid = new Signal<World[]>([]);
 export const levelsGrid = new Signal<Level[]>([]);
 export const vocabGrid = new Signal<Vocabulary[]>([]);
 export const circuitGrid = new Signal<CircuitState[]>([]);
 export const ledgerGrid = new Signal<LedgerEntry[]>([]);
+export const corpusGrid = new Signal<CorpusDocEntry[]>([]);
 
-// ─── Boot & Cascading Updates ────────────────────────────────────
-
-import { seedDatabaseIfEmpty } from './seed';
-
-export async function bootLedger() {
-  await vfsDb.init();                 // 1. Initialize the IndexedDB connection
-  await seedDatabaseIfEmpty();        // 2. Parse the JSON and populate 0-DoF baseline
-  await refreshWorlds();              // 3. Flow data into the reactive UI Signals
+export async function bootLedger(): Promise<void> {
+  await vfsDb.init();               
+  await seedDatabaseIfEmpty();      
+  await refreshWorlds();            
 }
 
-export async function refreshWorlds() {
+export async function refreshWorlds(): Promise<void> {
   worldsGrid.value = await vfsDb.getWorlds();
 }
 
 createEffect(() => {
   const wId = selectedWorldId.value;
+  const worlds = worldsGrid.value;
   if (wId) {
-    const world = worldsGrid.value.find(w => w.id === wId);
-    activeWorldConfig.value = world || null;
-    
-    vfsDb.getLevels(wId).then(levels => {
-      levelsGrid.value = levels.sort((a, b) => a.levelIndex - b.levelIndex);
+    activeWorldConfig.value = worlds.find(w => w.id === wId) ?? null;
+    void vfsDb.getLevels(wId).then(levels => {
+      levelsGrid.value = levels.slice().sort((a, b) => a.levelIndex - b.levelIndex);
       if (levels.length > 0 && !selectedLevelId.value) {
         selectedLevelId.value = levels[0].id;
       }
@@ -51,29 +50,40 @@ createEffect(() => {
   }
 });
 
-// When selected level changes, fetch its Vocab, Circuit, and Ledger data
+let activeFetchLevelId: string | null = null; // FIXED: Prevent race condition lock
+
 createEffect(() => {
   const lId = selectedLevelId.value;
-  if (lId) {
-    Promise.all([
-      vfsDb.getVocabulary(lId),
-      vfsDb.getCircuitState(lId),
-      vfsDb.getLedgerEntries(lId)
-    ]).then(([vocabs, circuits, entries]) => {
-      vocabGrid.value = vocabs;
-      circuitGrid.value = circuits;
-      ledgerGrid.value = entries.sort((a, b) => b.cycle - a.cycle || b.seq - a.seq); // Newest first
-    });
-  } else {
+  if (!lId) {
     vocabGrid.value = [];
     circuitGrid.value = [];
     ledgerGrid.value = [];
+    return;
   }
+  void loadLevelData(lId);
 });
 
-// ─── Grid Actions (Mutations) ────────────────────────────────────
+async function loadLevelData(levelId: string): Promise<void> {
+  activeFetchLevelId = levelId;
+  const [vocabs, circuits] = await Promise.all([
+    vfsDb.getVocabulary(levelId),
+    vfsDb.getCircuitState(levelId),
+  ]);
+  const entriesPerCircuit = await Promise.all(
+    circuits.map(c => vfsDb.getLedgerEntries(c.id))
+  );
+  
+  if (activeFetchLevelId !== levelId) return; // Drop stale responses
 
-export async function addVocabTerm(term: string, k4Type: K4Type, role: ElementRole) {
+  const entries = entriesPerCircuit.flat();
+  vocabGrid.value = vocabs;
+  circuitGrid.value = circuits;
+  ledgerGrid.value = entries.sort(
+    (a, b) => (b.cycle - a.cycle) || (b.seq - a.seq)
+  ); 
+}
+
+export async function addVocabTerm(term: string, k4Type: K4Type, role: ElementRole): Promise<void> {
   const lId = selectedLevelId.value;
   if (!lId) return;
 
@@ -83,19 +93,31 @@ export async function addVocabTerm(term: string, k4Type: K4Type, role: ElementRo
     term,
     k4Type,
     role,
-    description: ''
+    description: '',
   };
 
   await vfsDb.upsertVocabulary(newVocab);
-  vocabGrid.value = await vfsDb.getVocabulary(lId); // Trigger UI update
+  vocabGrid.value = await vfsDb.getVocabulary(lId);
 }
 
-// Quick helper to dump current vocab context for the Rust Engine / LLM Prompt
+export function addCorpusDoc(name: string, content: string): void {
+  const doc: CorpusDocEntry = {
+    id: crypto.randomUUID(),
+    name,
+    content,
+  };
+  corpusGrid.value = [...corpusGrid.value, doc];
+}
+
+export function deleteCorpusDoc(id: string): void {
+  corpusGrid.value = corpusGrid.value.filter(d => d.id !== id);
+}
+
 export function getActiveVocabContext(): string {
   const vocabs = vocabGrid.value;
-  if (vocabs.length === 0) return "No domain vocabulary defined.";
-  
-  return vocabs.map(v => 
-    `- [${v.k4Type}] (${v.role}): ${v.term}`
-  ).join('\n');
+  if (vocabs.length === 0) return 'No domain vocabulary defined.';
+
+  return vocabs
+    .map(v => `- [${v.k4Type}] (${v.role}): ${v.term}`)
+    .join('\n');
 }
