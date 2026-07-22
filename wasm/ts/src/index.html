@@ -3,62 +3,69 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>K4 Manifold | Semantic OS</title>
-  <link rel="stylesheet" href="./styles.css">
+  <title>K4-Manifold // Semantic OS</title>
+  <link rel="stylesheet" href="/styles.css">
 </head>
 <body>
-  <header class="topbar">
-    <div id="role-badge" data-role="validator" data-mode="cold">cold</div>
-    <div id="status-strip" data-health="cold"></div>
-  </header>
+  <div id="app-container">
+    <header class="topbar">
+      <div id="role-badge">cold</div>
+      <div id="status-strip" data-health="cold">cold · no PTR committed yet</div>
+      <span id="thread-indicator" style="font-size:11px; color:#666; margin-right:10px;">no active thread</span>
+      <button id="reset-btn" title="Factory Reset VFS">⟲ Reset</button>
+    </header>
 
-  <div id="app-layout">
-    <!-- Column 1: Relational VFS Navigation -->
-    <aside id="ledger-sidebar"></aside>
-    
-    <!-- Column 2: Workbench Grid -->
-    <main id="ledger-main">
-      <div id="ledger-tabs"></div>
-      <div id="ledger-grid-body"></div>
-    </main>
+    <aside id="ledger-sidebar">
+      <div class="sidebar-title">Worlds & Levels</div>
+    </aside>
 
-    <!-- Column 3: Operations (K4 State + Terminal) -->
-    <aside class="ops-column">
-      
-      <!-- Top Half: K4 Surface & Braid -->
-      <div class="k4-state-panel">
-        <div class="panel-head">
-          <h3>Working Surface</h3>
-          <span id="thread-indicator" class="thread-id">no active thread</span>
-        </div>
-        <div id="working-surface" class="surface-grid"></div>
-        
-        <div class="panel-head" style="border-top: 1px solid var(--line); margin-top: 0.5rem;">
-          <h3>Braid History</h3>
-        </div>
-        <div id="braid-history" class="braid-list"></div>
+    <main id="main-workspace">
+      <div id="prompt-workspace" class="prompt-workspace" style="display: none;">
+        <h4>⚠️ MANUAL MODE: PROMPT WORKSPACE</h4>
+        <p>Copy this prompt, run it in your LLM, and paste the output into the main input box below.</p>
+        <textarea id="prompt-workspace-text" readonly></textarea>
+        <button id="copy-prompt-btn">Copy Prompt</button>
       </div>
 
-      <!-- Bottom Half: Agentic Terminal -->
-      <section class="chat-panel">
-        <div class="panel-head">
-          <h3>Agentic Terminal</h3>
-        </div>
-        <div id="chat-log" role="log" aria-live="polite"></div>
+      <section class="panel" id="chat-panel">
+        <div class="panel-header">Operator Circuit</div>
+        <div id="chat-log"></div>
         <form id="input-form">
-          <textarea id="user-input" rows="2" placeholder="Enter intent or Document 0…" autofocus></textarea>
-          <textarea id="corpus-input" rows="2" placeholder="Attach Corpus Documents (D1..N)..."></textarea>
-          <div class="button-row">
-            <button id="reset-btn" type="button" title="Clear VFS and reload">Reset</button>
-            <button id="submit-btn" type="submit">Compile →</button>
-          </div>
+          <textarea id="user-input" placeholder="Enter your intent or Document 0…"></textarea>
+          <button type="submit" id="submit-btn">Engage</button>
         </form>
       </section>
 
+      <div id="bottom-grid">
+        <section class="panel" id="surface-panel">
+          <div class="panel-header">Working Surface</div>
+          <div id="working-surface"></div>
+        </section>
+
+        <section class="panel" id="braid-panel">
+          <div class="panel-header">
+            Braid History
+            <div class="braid-controls">
+              <label>Thread:</label>
+              <select id="thread-select"></select>
+            </div>
+          </div>
+          <div id="braid-history"></div>
+        </section>
+
+        <section class="panel" id="sandbox-panel-container">
+          <div class="panel-header">Quarantined Sandboxes (Hold Runs)</div>
+          <div id="sandbox-panel"></div>
+        </section>
+      </div>
+    </main>
+
+    <aside id="ledger-grid-container">
+      <div id="ledger-tabs"></div>
+      <div id="ledger-grid-body"></div>
     </aside>
   </div>
 
-  <script type="module" src="./src/ui.ts"></script>
-  <script type="module" src="./src/ledger/ledger-ui.ts"></script>
+  <script type="module" src="/src/main.ts"></script>
 </body>
 </html>
