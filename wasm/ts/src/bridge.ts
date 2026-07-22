@@ -57,6 +57,19 @@ export async function submitLlmPaste(llmResponseText: string): Promise<void> {
   await runEngineLoop(command);
 }
 
+
+// WARM CHAT BYPASS: Bypasses corpus injection for conversational continuity
+export async function processUserReply(replyText: string): Promise<void> {
+    chatLog.value = [...chatLog.value, { role: 'user', text: replyText }];
+    uiState.value = 'processing';
+
+    // Direct step without step_submission wrapper
+    let command = engine.step(replyText);
+    syncEngineState();
+    await runEngineLoop(command);
+}
+
+
 async function runEngineLoop(initialCommand: any) {
   let command = initialCommand;
   while (command) {

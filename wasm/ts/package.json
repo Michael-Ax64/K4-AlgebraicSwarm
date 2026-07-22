@@ -8,7 +8,7 @@
     "preview": "vite preview"
   },
   "devDependencies": {
-    "k4-manifold": "file:../rust/pkg",
+    "k4_manifold": "file:../rust/pkg",
     "typescript": "^5.3.3",
     "vite": "^8.1.5"
   }
