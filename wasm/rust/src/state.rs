@@ -1,5 +1,7 @@
+// wasm/rust/src/state.rs
 use std::collections::HashMap;
 use crate::algebra::{Pole, Stance};
+use serde::{Serialize, Deserialize};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum HeldRole {
@@ -110,14 +112,14 @@ pub struct ParadoxHeader {
 
 // ─── BWR (existing types) ──────────────────────────────────────
 
-#[derive(Debug, Clone, PartialEq)] // REMOVED Eq
+#[derive(Debug, Clone, PartialEq)] 
 pub struct BridgeWorkingRecord {
     pub map: MapState,
     pub live: LiveProbe,
     pub braid_context: BraidContext,
 }
 
-#[derive(Debug, Clone, PartialEq)] // REMOVED Eq
+#[derive(Debug, Clone, PartialEq)] 
 pub struct MapState {
     pub anchor: (String, Pole, f32),
     pub axis_scores: HashMap<String, Pole>,
@@ -168,7 +170,7 @@ pub struct WriteStamp {
     pub stance: Stance,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum SlotState {
     Unwritten,
     Prior,
@@ -262,3 +264,4 @@ impl WorkingSurface {
         out
     }
 }
+

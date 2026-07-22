@@ -1,15 +1,13 @@
-// src/ui.ts
+// wasm/ui/src/ui.ts
 import { createEffect } from './reactive';
 import {
-  uiState, chatLog,
+  uiState, chatLog, corpusDocs,
   engineHeader, workingSurface, braidHistory, activeThreadId,
   currentRole, currentMode,
-  UIState, CurrentRole,
+  UIState, CurrentRole, CorpusDocument,
 } from './state';
-import { processInput } from './bridge';
+import { processSubmission } from './bridge';
 import { clearVfs } from './persistence';
-
-// ─── DOM references ──────────────────────────────────────────
 
 const chatContainer = requireEl('chat-log');
 const inputForm = requireEl<HTMLFormElement>('input-form');
@@ -22,13 +20,15 @@ const surfacePanel = requireEl('working-surface');
 const braidPanel = requireEl('braid-history');
 const threadIndicator = requireEl('thread-indicator');
 
+// Secondary UI element (assuming existence in index.html for merged corpus input)
+// If not present in HTML, this will gracefully fall back to an empty corpus array.
+const corpusInput = document.getElementById('corpus-input') as HTMLTextAreaElement | null;
+
 function requireEl<T extends HTMLElement = HTMLElement>(id: string): T {
   const el = document.getElementById(id);
   if (!el) throw new Error(`Missing #${id} in DOM`);
   return el as T;
 }
-
-// ─── 1. Chat log ─────────────────────────────────────────────
 
 createEffect(() => {
   const messages = chatLog.value;
@@ -41,8 +41,6 @@ createEffect(() => {
   chatContainer.scrollTop = chatContainer.scrollHeight;
 });
 
-// ─── 2. Input controls ───────────────────────────────────────
-
 const awaitPlaceholders: Record<CurrentRole, string> = {
   Validator:  "Reply to the Validator…",
   Bridge:     "Reply to the Bridge's articulation…",
@@ -51,7 +49,7 @@ const awaitPlaceholders: Record<CurrentRole, string> = {
 };
 
 const placeholders = (role: CurrentRole): Record<UIState, string> => ({
-  idle:          'Enter your intent or document…',
+  idle:          'Enter your intent or Document 0…',
   processing:    'Computing topology…',
   awaiting_user: awaitPlaceholders[role],
   halted:        'Run halted. Reset to continue.',
@@ -66,8 +64,6 @@ createEffect(() => {
   if (state === 'awaiting_user') inputField.focus();
 });
 
-// ─── 2b. Role badge — which of the four instruments is in the loop ─
-
 createEffect(() => {
   const role = currentRole.value;
   const mode = currentMode.value;
@@ -77,8 +73,6 @@ createEffect(() => {
     ? 'cold'
     : `${role.toLowerCase()} · ${mode === 'expect_llm' ? 'thinking' : 'awaiting reply'}`;
 });
-
-// ─── 3. Status strip (the [STATE] header, live) ──────────────
 
 createEffect(() => {
   const h = engineHeader.value;
@@ -113,8 +107,6 @@ function field(label: string, value: string): HTMLElement {
   return span;
 }
 
-// ─── 4. Working surface panel (P/U/I/R with slot states) ─────
-
 createEffect(() => {
   const slots = workingSurface.value;
   surfacePanel.replaceChildren(...slots.map(slot => {
@@ -131,8 +123,6 @@ createEffect(() => {
     return cell;
   }));
 });
-
-// ─── 5. Braid history (all committed PTRs, oldest → newest) ──
 
 createEffect(() => {
   const ptrs = braidHistory.value;
@@ -174,22 +164,25 @@ createEffect(() => {
 });
 
 function shortenStance(stance: string): string {
-  // "Synthesis (P = U × I)" → "Synthesis"
   const paren = stance.indexOf(' (');
   return paren === -1 ? stance : stance.slice(0, paren);
 }
-
-// ─── 6. Submission ───────────────────────────────────────────
 
 inputForm.addEventListener('submit', (e) => {
   e.preventDefault();
   const text = inputField.value.trim();
   if (!text) return;
   inputField.value = '';
-  void processInput(text);
-});
+  
+  // Package D1..N if UI supports it
+  let docs: CorpusDocument[] = corpusDocs.value;
+  if (corpusInput && corpusInput.value.trim()) {
+    docs = [{ name: 'Attached_Corpus', content: corpusInput.value.trim() }];
+    corpusInput.value = ''; // clear
+  }
 
-// ─── 7. Reset (clears persisted VFS; requires a page reload to rebind engine) ─
+  void processSubmission(text, docs);
+});
 
 resetBtn.addEventListener('click', () => {
   if (!confirm('Clear all persisted state and reload?')) return;
@@ -197,10 +190,9 @@ resetBtn.addEventListener('click', () => {
   location.reload();
 });
 
-// ─── util ────────────────────────────────────────────────────
-
 function escapeHtml(s: string): string {
   return s.replace(/[&<>"']/g, c => ({
     '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;',
   }[c] as string));
 }
+

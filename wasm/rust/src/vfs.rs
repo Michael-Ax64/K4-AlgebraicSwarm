@@ -1,13 +1,20 @@
+// wasm/rust/src/vfs.rs
 use serde::{Serialize, Deserialize};
 use std::collections::HashMap;
 use crate::algebra::{Pole, Stance};
-use crate::state::{StateHeader, WorkingSurface};
+use crate::state::{StateHeader, WorkingSurface, SlotState};
 
 /// The action taken on the Braid thread at the end of a cycle.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum ThreadAction {
     Continue, // Append to current thread
     Sever,    // Park current thread, initialize new thread
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct SurfaceSlotSnapshot {
+    pub content: String,
+    pub state: SlotState,
 }
 
 /// The Phase Transition Record (PTR). The only artifact that pays the Landauer Tax.
@@ -23,7 +30,7 @@ pub struct PhaseTransitionRecord {
     pub path_traversed: Vec<Pole>,
     pub held_pole: Pole,
     pub held_role: String, // "nil" or "MATERIAL"
-    pub surface_snapshot: HashMap<Pole, String>, // Simplified: just the content for the record
+    pub surface_snapshot: HashMap<Pole, SurfaceSlotSnapshot>, 
     pub health: String, // "clear", "raises: k", or "HALTED: reason"
 }
 
@@ -111,11 +118,14 @@ impl VirtualFileSystem {
             self.braid.active_thread_id = Some(thread_id.clone());
         }
 
-        // Assemble the PTR
+        // Assemble the PTR with full slot states
         let mut surface_snapshot = HashMap::new();
         for (pole, slot) in &surface.slots {
             if let Some(content) = &slot.content {
-                surface_snapshot.insert(*pole, content.clone());
+                surface_snapshot.insert(*pole, SurfaceSlotSnapshot {
+                    content: content.clone(),
+                    state: slot.state,
+                });
             }
         }
 
@@ -150,10 +160,6 @@ impl VirtualFileSystem {
     }
 
     /// Reads the Braid context for the Intake Validator (Gate B).
-    /// Returns the last stance (parsed from the latest PTR's stance string) and
-    /// the four Gray-code-adjacent facet IDs (per Stance::viable_adjacencies +
-    /// Stance::facet_id). Cold projects — no active thread or no PTR — return
-    /// (None, all 12 facet IDs).
     pub fn get_braid_context(&self) -> (Option<Stance>, Vec<u8>) {
         let active_id = match &self.braid.active_thread_id {
             Some(id) => id,

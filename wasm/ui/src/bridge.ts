@@ -1,35 +1,38 @@
-// src/bridge.ts
+// wasm/ui/src/bridge.ts
 //
-// The airlock between the reactive UI and the deterministic Wasm engine.
-//
-// Two changes over the original bridge:
-//   1. Uses `create_engine_with_state` to restore any previously-persisted VFS.
-//   2. After every engine transition, syncs the derived signals (header,
-//      working surface, braid history) from `engine.vfs_state` and persists.
-//
-// The AwaitUser → user-reply → HALT problem is not fixable at this layer
-// alone — it needs a small Rust patch. See README, "Open items."
+// ─── L6 INVERSION OF CONTROL (IoC) PATTERN ─────────────────────
+// The Wasm Engine (Rust) acts as the OS Kernel and Ledger (R/P). 
+// It does not call the LLM directly. It yields its Angular Frequency (ω) 
+// to the TypeScript host environment (the Event Loop / Relational Flow, I).
+// The Engine registers a `FetchLLM` command and waits. The TS host executes
+// the LLM API call (the uncollapsed potential Q) and invokes the engine's step.
+// This is the literal architectural translation of "Don't call us, we'll call you."
+// ───────────────────────────────────────────────────────────────
 
 import {
-  uiState, chatLog,
+  uiState, chatLog, corpusDocs,
   engineHeader, workingSurface, braidHistory, activeThreadId,
   currentRole, currentMode,
-  Pole, SlotState, EngineHeader, SurfaceSlot, PtrSummary, HeldRole, ThreadAction,
+  Pole, SlotState, EngineHeader, SurfaceSlot, PtrSummary, HeldRole, ThreadAction, CorpusDocument
 } from './state';
 import { create_engine_with_state, K4Engine } from 'k4-manifold';
 import { loadVfs, persistVfs } from './persistence';
 
-// LLM provider — supply your own. Signature is (prompt: string) => Promise<string>.
 declare function callYourLLMProvider(prompt: string): Promise<string>;
 
 const engine: K4Engine = create_engine_with_state(loadVfs());
 syncEngineState();
 
-export async function processInput(userText: string): Promise<void> {
-  chatLog.value = [...chatLog.value, { role: 'user', text: userText }];
+// Renamed from processInput to support D0 + D1..N
+export async function processSubmission(doc0Text: string, docs: CorpusDocument[]): Promise<void> {
+  chatLog.value = [...chatLog.value, { role: 'user', text: doc0Text }];
   uiState.value = 'processing';
 
-  let command = engine.step(userText);
+  // Pack the corpus as JSON to cross the Wasm boundary
+  const corpusJson = JSON.stringify(docs.map(d => [d.name, d.content]));
+  
+  // Call the new step_submission signature
+  let command = engine.step_submission(doc0Text, corpusJson);
   syncEngineState();
 
   while (command) {
@@ -100,13 +103,12 @@ interface PtrShape {
   operating_plane: Pole;
   path_traversed: Pole[];
   held_pole: Pole;
-  held_role: string;   // "nil" | "material"
-  surface_snapshot: Partial<Record<Pole, string>>;
+  held_role: string;   
+  surface_snapshot: Record<Pole, { content: string, state: SlotState }>;
   health: string;
 }
 
 function syncEngineState(): void {
-  // Role and mode come off the engine directly — always current, no JSON round-trip.
   currentRole.value = engine.current_role;
   currentMode.value = engine.current_mode;
 
@@ -154,12 +156,15 @@ function normalizeHeldRole(raw: string): HeldRole {
   return raw.toLowerCase() === 'material' ? 'material' : 'nil';
 }
 
-function snapshotToSlots(snapshot: Partial<Record<Pole, string>>): SurfaceSlot[] {
+function snapshotToSlots(snapshot: Record<Pole, { content: string, state: SlotState }>): SurfaceSlot[] {
   const poles: Pole[] = ['P', 'U', 'I', 'R'];
   return poles.map(pole => {
-    const content = snapshot[pole] ?? null;
-    const state: SlotState = content !== null ? 'Current' : 'Unwritten';
-    return { pole, content, state };
+    const slotData = snapshot[pole];
+    return { 
+        pole, 
+        content: slotData?.content ?? null, 
+        state: slotData?.state ?? 'Unwritten' 
+    };
   });
 }
 
