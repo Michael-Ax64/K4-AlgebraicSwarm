@@ -1,0 +1,50 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>K4 Manifold</title>
+  <link rel="stylesheet" href="./styles.css">
+</head>
+<body>
+  <header class="topbar">
+    <div id="role-badge" data-role="validator" data-mode="cold">cold</div>
+    <div id="status-strip" data-health="cold"></div>
+  </header>
+
+  <main class="grid">
+    <section class="chat-column">
+      <div id="chat-log" role="log" aria-live="polite"></div>
+      <form id="input-form">
+        <textarea
+          id="user-input"
+          rows="3"
+          placeholder="Enter your intent or document…"
+          autofocus
+        ></textarea>
+        <div class="button-row">
+          <button id="reset-btn" type="button" title="Clear persisted VFS and reload">reset</button>
+          <button id="submit-btn" type="submit">step →</button>
+        </div>
+      </form>
+    </section>
+
+    <aside class="side-column">
+      <section class="panel">
+        <div class="panel-head">
+          <h3>Working Surface</h3>
+          <span id="thread-indicator" class="thread-id">no active thread</span>
+        </div>
+        <div id="working-surface" class="surface-grid"></div>
+      </section>
+
+      <section class="panel">
+        <h3>Braid History</h3>
+        <div id="braid-history" class="braid-list"></div>
+      </section>
+    </aside>
+  </main>
+
+  <script type="module" src="./src/ui.ts"></script>
+</body>
+</html>
