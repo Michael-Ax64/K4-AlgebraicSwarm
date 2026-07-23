@@ -136,3 +136,499 @@ input[type="range"]::-webkit-slider-thumb { -webkit-appearance: none; width: 14p
 ::-webkit-scrollbar { width: 8px; height: 8px; }
 ::-webkit-scrollbar-track { background: var(--bg-deep); }
 ::-webkit-scrollbar-thumb { background: var(--border-strong); border-radius: 4px; }
+
+
+/* --- K4 Manifold: Chat Screen Layout --- */
+/* --- Structural Layout Only (Colors managed by host styles.css) --- */
+
+
+/* =========================================================================
+   K4 MANIFOLD: STRUCTURAL LAYOUT
+   Colors are inherited from the host. This stylesheet manages flex, grid, 
+   geometry, and theme-agnostic contrast (via neutral alpha channels).
+   ========================================================================= */
+
+:root {
+    /* Theme-agnostic structural variables (safe for light AND dark modes) */
+    --k4-border: rgba(128, 128, 128, 0.3);
+    --k4-border-strong: rgba(128, 128, 128, 0.6);
+    --k4-surface: rgba(128, 128, 128, 0.05);
+    --k4-hover: rgba(128, 128, 128, 0.1);
+    --k4-active: rgba(128, 128, 128, 0.15);
+    --k4-text-muted: rgba(128, 128, 128, 0.8);
+}
+
+/* --- 1. GLOBAL OS SHELL --- */
+
+.k4-app-layout {
+    display: flex;
+    height: 100vh;
+    width: 100vw;
+    overflow: hidden;
+    box-sizing: border-box;
+}
+
+.k4-chrome {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 10px 15px;
+    flex-shrink: 0;
+    border-bottom: 1px solid var(--k4-border);
+}
+
+.k4-nav-group {
+    display: flex;
+    gap: 10px;
+}
+
+.k4-nav-btn {
+    padding: 8px 16px;
+    cursor: pointer;
+    border-radius: 4px;
+    background: transparent;
+    color: inherit;
+    border: 1px solid transparent;
+    transition: background 0.2s, border 0.2s;
+}
+
+.k4-nav-btn:hover {
+    background: var(--k4-hover);
+}
+
+.k4-nav-btn.active {
+    font-weight: bold;
+    border-color: var(--k4-border-strong);
+    background: var(--k4-surface);
+}
+
+.k4-main-area {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+}
+
+.k4-screen-container {
+    flex: 1;
+    padding: 15px;
+    overflow-y: auto;
+}
+
+/* --- 2. STATIC LEFT COLUMN (CONTEXT) --- */
+
+.k4-sidebar-static {
+    flex: 0 0 260px;
+    display: flex;
+    flex-direction: column;
+    padding: 15px;
+    overflow-y: auto;
+    border-right: 1px solid var(--k4-border);
+}
+
+.world-item {
+    padding: 8px;
+    margin-bottom: 4px;
+    border-radius: 4px;
+    cursor: pointer;
+    font-weight: 500;
+    transition: background 0.2s;
+}
+
+.world-item:hover {
+    background: var(--k4-hover);
+}
+
+.world-item.active {
+    background: var(--k4-active);
+    font-weight: bold;
+}
+
+.level-container {
+    padding-left: 15px;
+    margin-bottom: 10px;
+    border-left: 2px solid var(--k4-border);
+    margin-left: 8px;
+}
+
+.level-item {
+    padding: 6px 8px;
+    margin-top: 4px;
+    border-radius: 4px;
+    font-size: 0.9rem;
+    cursor: pointer;
+    color: var(--k4-text-muted);
+}
+
+.level-item:hover {
+    background: var(--k4-hover);
+}
+
+.level-item.active {
+    font-weight: bold;
+    color: inherit;
+}
+
+/* --- 3. CHAT SCREEN (CENTER & RIGHT COLUMNS) --- */
+
+.chat-screen-layout {
+    display: flex;
+    gap: 20px;
+    height: 100%;
+}
+
+.k4-chat-col {
+    flex: 2;
+    display: flex;
+    flex-direction: column;
+    min-height: 0;
+}
+
+.k4-state-col {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    overflow-y: auto;
+    min-height: 0;
+    padding-right: 5px; /* Prevent scrollbar clipping */
+}
+
+.panel-header {
+    margin-top: 0;
+    margin-bottom: 15px;
+    border-bottom: 1px solid var(--k4-border);
+    padding-bottom: 8px;
+    font-size: 1.1rem;
+}
+
+.sub-header {
+    margin-top: 20px;
+    margin-bottom: 8px;
+    font-size: 0.95rem;
+    font-weight: 600;
+}
+
+/* Chat Log & Messages */
+.chat-log-container {
+    flex: 1;
+    overflow-y: auto;
+    border: 1px solid var(--k4-border);
+    padding: 15px;
+    margin-bottom: 15px;
+    border-radius: 4px;
+    background: var(--k4-surface);
+}
+
+.msg-block {
+    margin-bottom: 12px;
+    padding: 12px;
+    border-radius: 4px;
+    white-space: pre-wrap;
+    line-height: 1.5;
+}
+
+/* Structural distinction instead of hard colors */
+.msg-user {
+    border-left: 3px solid var(--k4-border-strong);
+    background: var(--k4-hover);
+}
+
+.msg-system {
+    font-family: monospace;
+    font-size: 0.85rem;
+    border: 1px solid var(--k4-border);
+}
+
+.msg-error {
+    font-family: monospace;
+    border: 1px dashed var(--k4-border-strong);
+}
+
+/* Prompt Workspace & Forms */
+.prompt-workspace {
+    margin-bottom: 15px;
+    padding: 15px;
+    border: 1px dashed var(--k4-border-strong);
+    border-radius: 4px;
+    background: var(--k4-surface);
+}
+
+.prompt-workspace textarea {
+    width: 100%;
+    height: 120px;
+    font-family: monospace;
+    font-size: 0.85rem;
+    margin-top: 8px;
+    padding: 8px;
+    background: transparent;
+    color: inherit;
+    border: 1px solid var(--k4-border);
+}
+
+.chat-input-form {
+    display: flex;
+    gap: 10px;
+    flex-shrink: 0;
+}
+
+.chat-input-form textarea {
+    flex: 1;
+    height: 80px;
+    font-family: inherit;
+    padding: 12px;
+    border: 1px solid var(--k4-border);
+    border-radius: 4px;
+    resize: none;
+    font-size: 0.95rem;
+    background: transparent;
+    color: inherit;
+}
+
+.chat-input-form textarea:focus {
+    outline: none;
+    border-color: var(--k4-border-strong);
+}
+
+/* --- 4. 12-PERSPECTIVES MAP (PARADOX GRID) --- */
+
+.held-paradoxes-root {
+    margin-top: 15px;
+    width: 100%;
+}
+
+.paradox-grid {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 12px;
+    margin-top: 10px;
+}
+
+.paradox-face-row {
+    grid-column: 1 / -1;
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 10px;
+}
+
+.paradox-face-header {
+    grid-column: 1 / -1;
+    font-weight: 700;
+    margin-top: 20px;
+    border-bottom: 2px solid var(--k4-border-strong);
+    padding-bottom: 4px;
+    letter-spacing: 0.5px;
+}
+
+.paradox-card {
+    border: 1px solid var(--k4-border);
+    border-radius: 4px;
+    padding: 12px;
+    cursor: pointer;
+    background: var(--k4-surface);
+    transition: transform 0.2s, box-shadow 0.2s, border-color 0.2s;
+}
+
+.paradox-card:hover {
+    border-color: var(--k4-border-strong);
+    transform: translateY(-2px);
+    background: var(--k4-hover);
+}
+
+.paradox-name {
+    font-weight: 700;
+    font-size: 1rem;
+    margin-bottom: 4px;
+}
+
+.paradox-meta {
+    font-size: 0.75rem;
+    font-family: monospace;
+    color: var(--k4-text-muted);
+    margin-bottom: 8px;
+}
+
+.paradox-tension {
+    font-size: 0.9rem;
+    line-height: 1.4;
+}
+
+/* --- 5. SYSTEM STATE (RIGHT COLUMN) --- */
+
+.role-badge {
+    font-weight: bold;
+    font-size: 1.1rem;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+}
+
+.status-strip {
+    font-family: monospace;
+    font-size: 0.8rem;
+    margin-top: 10px;
+    padding: 10px;
+    border: 1px solid var(--k4-border);
+    border-radius: 4px;
+    background: var(--k4-surface);
+}
+
+.status-field {
+    margin-right: 12px;
+    display: inline-block;
+    margin-bottom: 4px;
+}
+
+.status-field em {
+    font-style: normal;
+    color: var(--k4-text-muted);
+}
+
+/* Working Surface */
+.surface-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 10px;
+}
+
+.surface-slot {
+    padding: 10px;
+    border-radius: 4px;
+}
+
+/* Slot States defined structurally, not by color */
+.state-current {
+    border: 2px solid var(--k4-border-strong);
+}
+
+.state-unwritten {
+    border: 1px dashed var(--k4-border);
+    color: var(--k4-text-muted);
+}
+
+.state-stale {
+    border: 2px dotted var(--k4-border-strong);
+    opacity: 0.7;
+}
+
+.slot-label {
+    font-weight: bold;
+    font-size: 0.8rem;
+}
+
+.slot-body {
+    font-size: 0.9rem;
+    margin-top: 6px;
+}
+
+/* Braid & Sandboxes */
+.thread-controls {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    margin-bottom: 10px;
+}
+
+.braid-panel {
+    height: 180px;
+    overflow-y: auto;
+    border: 1px solid var(--k4-border);
+    padding: 8px;
+    border-radius: 4px;
+    background: var(--k4-surface);
+}
+
+.ptr-row {
+    font-size: 0.85rem;
+    padding: 6px 0;
+    border-bottom: 1px solid var(--k4-border);
+    display: flex;
+    align-items: center;
+}
+
+.ptr-cycle { font-weight: bold; width: 40px; color: var(--k4-text-muted); }
+.ptr-stance { flex: 1; font-weight: 500; }
+.ptr-geom { margin-right: 15px; font-family: monospace; color: var(--k4-text-muted); }
+
+/* Structural Health indications */
+.health-clear { font-weight: bold; }
+.health-warn { font-weight: bold; font-style: italic; }
+.health-halted { font-weight: bold; text-decoration: underline; }
+
+.sandbox-panel {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
+.sandbox-details {
+    font-size: 0.85rem;
+    border: 1px solid var(--k4-border);
+    padding: 6px;
+    border-radius: 4px;
+}
+
+.sandbox-details summary {
+    font-weight: bold;
+    cursor: pointer;
+}
+
+.sandbox-file {
+    margin-top: 8px;
+    padding-left: 15px;
+    border-left: 2px solid var(--k4-border-strong);
+}
+
+.sandbox-file pre {
+    padding: 8px;
+    overflow-x: auto;
+    border-radius: 2px;
+    background: var(--k4-surface);
+}
+
+/* --- 6. BUTTONS --- */
+
+.k4-btn-primary {
+    padding: 8px 20px;
+    font-weight: 600;
+    border: 1px solid currentColor;
+    border-radius: 4px;
+    cursor: pointer;
+    background: transparent;
+    color: inherit;
+    transition: background 0.2s, color 0.2s;
+}
+
+.k4-btn-primary:hover {
+    background: currentColor;
+    /* CSS Trick to invert text color on hover based on the host's background */
+    color: var(--bg-color, #fff); 
+}
+
+.k4-btn-primary:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+    background: transparent;
+    color: inherit;
+}
+
+.k4-btn-danger {
+    margin-top: 20px;
+    width: 100%;
+    padding: 10px;
+    border: 1px dashed currentColor;
+    border-radius: 4px;
+    cursor: pointer;
+    background: transparent;
+    color: inherit;
+    font-weight: bold;
+    transition: opacity 0.2s;
+}
+
+.k4-btn-danger:hover {
+    opacity: 0.7;
+}
+
+.empty-text {
+    color: var(--k4-text-muted);
+    font-size: 0.85rem;
+    font-style: italic;
+}

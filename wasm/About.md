@@ -1,6 +1,6 @@
 Opus sez, I've read the whole aggregate. Here's what I found.
 
-**VERY MUCH A SOFTWARE WORK IN PROGRESS**
+**VERY MUCH A SOFTWARE WORK IN PROGRESS. Chrome ok, Ffox so far not.**
 
 # What the app is
 

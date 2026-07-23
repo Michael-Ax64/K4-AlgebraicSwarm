@@ -1,4 +1,4 @@
-// wasm/ts/src/reactive.ts
+// wasm/src/reactive.ts
 
 let activeEffect: (() => void) | null = null;
 
@@ -15,6 +15,7 @@ function flushEffects() {
     effect();
   }
 }
+
 
 export class Signal<T> {
   private _value: T;
@@ -44,6 +45,11 @@ export class Signal<T> {
       this._value = newValue;
       this.trigger();
     }
+  }
+
+  // Read without subscribing.
+  peek(): T {
+    return this._value;
   }
 
   private trigger() {

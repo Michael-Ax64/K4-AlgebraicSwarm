@@ -1,4 +1,5 @@
 // wasm/ts/src/ledger/grid-state.ts
+
 import { Signal, createEffect } from '../reactive';
 import { vfsDb } from './fs';
 import {
@@ -12,6 +13,7 @@ export type LedgerTab = 'vocab' | 'corpus' | 'circuit' | 'ledger' | 'settings';
 export const activeWorldConfig = new Signal<World | null>(null);
 export const selectedWorldId = new Signal<string | null>(null);
 export const selectedLevelId = new Signal<string | null>(null);
+export const selectedCircuitId = new Signal<string | null>(null); // NEW: 5D Coordinate Index
 export const activeTab = new Signal<LedgerTab>('vocab');
 
 export const worldsGrid = new Signal<World[]>([]);
@@ -53,6 +55,7 @@ createEffect(() => {
         levelsGrid.value = [];
         corpusGrid.value = [];
         selectedLevelId.value = null;
+        selectedCircuitId.value = null; // Clear coordinate too
     }
 });
 
@@ -63,6 +66,7 @@ createEffect(() => {
         vocabGrid.value = [];
         circuitGrid.value = [];
         ledgerGrid.value = [];
+        selectedCircuitId.value = null;
         return;
     }
     void loadLevelData(lId);
@@ -81,6 +85,12 @@ async function loadLevelData(levelId: string): Promise<void> {
     const entries = entriesPerCircuit.flat();
     vocabGrid.value = vocabs;
     circuitGrid.value = circuits;
+    
+    // Auto-select the first coordinate so Pane 2 and 3 aren't dead
+    if (circuits.length > 0 && !selectedCircuitId.value) {
+        selectedCircuitId.value = circuits[0].id;
+    }
+
     ledgerGrid.value = entries.sort((a, b) => (b.cycle - a.cycle) || (b.seq - a.seq));
 }
 
@@ -111,7 +121,6 @@ export async function addCorpusDoc(name: string, content: string): Promise<void>
     };
     corpusGrid.value = [...corpusGrid.value, doc];
     
-    // Persist if the global world setting allows it
     const world = activeWorldConfig.value;
     if (world?.persistCorpus) {
         await vfsDb.upsertCorpusDoc(doc);
@@ -133,3 +142,4 @@ export function getActiveVocabContext(): string {
         .map(v => `- [${v.k4Type}] (${v.role}): ${v.term}`)
         .join('\n');
 }
+

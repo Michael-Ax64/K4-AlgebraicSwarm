@@ -1,3 +1,5 @@
+// /max/axtro/Write/CompilingReality/agentic/wasm/rust/src/algebra.rs
+
 use std::fmt;
 use serde::{Serialize, Deserialize};
 
@@ -83,13 +85,10 @@ impl Stance {
         [sm1, sm2, sp1, sp2]
     }
 
-    /// Canonical stance name (ParadoxEngine vocabulary — matches Rust's history).
-    /// See `spec_name(role)` for role-specific naming.
     pub fn equation_name(&self) -> &'static str {
         self.spec_name(SpecRole::Paradox)
     }
 
-    /// The 1..=12 facet identifier — consistent across all three spec tables.
     pub fn facet_id(&self) -> u8 {
         match (self.home, self.absent) {
             (Pole::P, Pole::R) => 1,
@@ -108,15 +107,9 @@ impl Stance {
         }
     }
 
-    /// Name of this stance in the vocabulary of the specified role.
-    /// The three specs disagree on 4-5 of the 12 stance labels; this method
-    /// lets a role-specific prompt emit the vocabulary that role's LLM was
-    /// primed on.
     pub fn spec_name(&self, role: SpecRole) -> &'static str {
         let (h, a) = (self.home, self.absent);
         match role {
-            // The Validator doesn't emit stance names in its own vocabulary — it
-            // relays them. Use Paradox as the canonical relay form.
             SpecRole::Validator | SpecRole::Paradox => match (h, a) {
                 (Pole::P, Pole::R) => "Synthesis (P = U × I)",
                 (Pole::P, Pole::I) => "Leverage (P = U² / R)",
@@ -166,33 +159,9 @@ impl Stance {
     }
 }
 
-/// The four prompt roles in the K4 stack. Each stands at a different station
-/// in the process and names the same twelve geometric positions in its own
-/// vocabulary.
-///
-/// **The three name tables are not disagreement.** A stance is defined by its
-/// `(home, absent)` pair — that is the invariant, established by the algebra.
-/// What each role calls the stance at that position varies with what the role
-/// *does* while standing there:
-///
-/// * The **Bridge** names positions by the phase-form of tension they identify —
-///   `Drive`, `Yield`, `Friction (R = U / I)` — because the Bridge is
-///   diagnosing tension.
-/// * The **Controller** names positions by the mechanical process it drives —
-///   `Friction (P = I² × R)`, `Grounding`, `Density` — because the Controller
-///   is executing a coordinate.
-/// * The **ParadoxEngine** names positions by the paradox they hold open —
-///   `Synthesis`, `Resonance (I = √(P/R))`, `Brittleness` — because the
-///   Engine is enumerating adjacencies.
-/// * The **Validator** does not name stances in its own vocabulary; it relays
-///   whatever the Bridge or Controller emits.
-///
-/// Same twelve points on the volume, three role-flavored views of what you're
-/// *doing* when you stand there. `spec_name(role)` gives the label for the
-/// requested view; `parse_stance_from_name` reads any of them.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub enum SpecRole {
-    Validator,   // shares Paradox vocabulary in practice — Validator doesn't emit stance names
+    Validator,
     Bridge,
     Controller,
     Paradox,
@@ -209,92 +178,106 @@ impl SpecRole {
     }
 }
 
-/// Accept a stance name in **any of the three specification vocabularies**.
-/// Same input-process-output pattern as the header parser:
-///
-/// 1. **Input**: a stance name in whatever vocabulary — Bridge (`Yield`),
-///    Controller (`Resonant`), or ParadoxEngine (`Resonance`) style.
-/// 2. **Process**: match the (label, equation-suffix) alias against the
-///    invariant `(home, absent)` pair. The equation suffix resolves the two
-///    label collisions unambiguously.
-/// 3. **Output**: a `Stance` — same twelve positions the algebra defines,
-///    regardless of which role's vocabulary named it.
-///
-/// The runtime hosts all four roles, so the parser has to hear all three
-/// vocabularies. Which vocabulary the *runtime* emits when it names a stance
-/// back to an LLM is chosen by `Stance::spec_name(role)`.
-///
-/// Match on the whole string OR on the leading label alone — so
-/// `parse_stance_from_name("Yield")`, `parse_stance_from_name("Yield (I = √(P/R))")`,
-/// and `parse_stance_from_name("Resonance (I = √(P/R))")` all resolve to the
-/// same `(I, U)` position. Two labels collide across specs:
-///
-/// * **`Friction`** — Bridge means (R, P), Controller means (P, U). With the
-///   equation suffix attached, disambiguation is unambiguous.
-/// * **`Resonance`** — Bridge means (I, R), ParadoxEngine means (I, U). Same
-///   disambiguation.
-///
-/// Bare labels resolve to the first table hit — currently the ParadoxEngine
-/// reading. If a run only emits full labels-with-equation this never matters.
 pub fn parse_stance_from_name(eq_name: &str) -> Result<Stance, &'static str> {
     let eq = eq_name.trim();
 
     // (label-only, full-with-equation, home, absent)
     // Every alias for the same (home, absent) is listed together.
     const ALIASES: &[(&str, &str, Pole, Pole)] = &[
+
         // (P, R)  — Synthesis (Paradox/Controller) | Drive (Bridge)
         ("Synthesis", "Synthesis (P = U × I)", Pole::P, Pole::R),
         ("Drive",     "Drive (P = U × I)",     Pole::P, Pole::R),
+
         // (P, I)  — Leverage (all three)
         ("Leverage",  "Leverage (P = U² / R)", Pole::P, Pole::I),
+
         // (P, U)  — Momentum (Paradox/Bridge) | Friction (Controller)
         ("Momentum",  "Momentum (P = I² × R)", Pole::P, Pole::U),
         ("Friction",  "Friction (P = I² × R)", Pole::P, Pole::U),  // Controller's Friction
+
         // (I, R)  — Extraction (Paradox/Controller) | Resonance (Bridge)
         ("Extraction","Extraction (I = P / U)",Pole::I, Pole::R),
         ("Resonance", "Resonance (I = P / U)", Pole::I, Pole::R),  // Bridge's Resonance
+
         // (I, P)  — Ohmic (Paradox/Controller) | Throughput (Bridge)
         ("Ohmic",     "Ohmic (I = U / R)",     Pole::I, Pole::P),
         ("Throughput","Throughput (I = U / R)",Pole::I, Pole::P),
+
         // (I, U)  — Resonance (Paradox) | Yield (Bridge) | Resonant (Controller)
         ("Resonance", "Resonance (I = √(P/R))",Pole::I, Pole::U),  // Paradox's Resonance
         ("Yield",     "Yield (I = √(P/R))",    Pole::I, Pole::U),
         ("Resonant",  "Resonant (I = √(P/R))", Pole::I, Pole::U),
+
         // (U, R)  — Tension (Paradox/Bridge) | Articulation (Controller)
         ("Tension",   "Tension (U = P / I)",   Pole::U, Pole::R),
         ("Articulation","Articulation (U = P / I)", Pole::U, Pole::R),
+
         // (U, P)  — Architecture (Paradox/Bridge) | Grounding (Controller)
         ("Architecture","Architecture (U = I × R)", Pole::U, Pole::P),
         ("Grounding", "Grounding (U = I × R)", Pole::U, Pole::P),
+
         // (U, I)  — Capacity (Paradox/Bridge) | Geometric (Controller)
         ("Capacity",  "Capacity (U = √(P×R))", Pole::U, Pole::I),
         ("Geometric", "Geometric (U = √(P×R))",Pole::U, Pole::I),
+
         // (R, P)  — Impedance (Paradox/Controller) | Friction (Bridge)
         ("Impedance", "Impedance (R = U / I)", Pole::R, Pole::P),
         ("Friction",  "Friction (R = U / I)",  Pole::R, Pole::P),  // Bridge's Friction — clashes!
+
         // (R, I)  — Accounting (Paradox/Controller) | Bloat (Bridge)
         ("Accounting","Accounting (R = U² / P)",Pole::R, Pole::I),
         ("Bloat",     "Bloat (R = U² / P)",    Pole::R, Pole::I),
+
         // (R, U)  — Brittleness (Paradox/Bridge) | Density (Controller)
         ("Brittleness","Brittleness (R = P / I²)", Pole::R, Pole::U),
         ("Density",   "Density (R = P / I²)",  Pole::R, Pole::U),
     ];
 
-    // Full-string match first (safer — the equation-part disambiguates the
-    // "Friction" and "Resonance" collisions).
     for (_, full, home, absent) in ALIASES {
-        if eq == *full {
-            return Stance::try_new(*home, *absent);
-        }
+        if eq == *full { return Stance::try_new(*home, *absent); }
     }
-    // Fall back to label-only match. The two collisions ("Friction" and
-    // "Resonance") are disambiguated in practice by carrying the equation,
-    // but a bare label still needs a defined resolution. We resolve to the
-    // first table hit — which is the Paradox meaning for both.
     for (label, _, home, absent) in ALIASES {
-        if eq == *label {
-            return Stance::try_new(*home, *absent);
+        if eq == *label { return Stance::try_new(*home, *absent); }
+    }
+
+    // --- NEW: ROBUST GEOMETRIC FALLBACK ---
+    // If the LLM improvises "Stance 1 (P, a:R)" or "5(I,a:P)", cut after '(' and parse the geometry directly.
+    if let Some(start) = eq.find('(') {
+        let inner = &eq[start + 1..];
+        if let Some(end) = inner.find(')') {
+            let coords = &inner[..end]; // e.g., "P, a:R"
+            let parts: Vec<&str> = coords.split(',').collect();
+            if parts.len() == 2 {
+                let h_str = parts[0].trim();
+                let a_part = parts[1].trim();
+                
+                let a_str = if a_part.starts_with("a:") {
+                    a_part[2..].trim()
+                } else {
+                    a_part
+                };
+
+                let parse_pole = |s: &str| -> Option<Pole> {
+                    match s {
+                        "P" => Some(Pole::P),
+                        "U" => Some(Pole::U),
+                        "I" => Some(Pole::I),
+                        "R" => Some(Pole::R),
+                        _ => None,
+                    }
+                };
+
+                if let (Some(h), Some(a)) = (parse_pole(h_str), parse_pole(a_str)) {
+                    if let Ok(stance) = Stance::try_new(h, a) {
+                        return Ok(stance);
+                    }
+                }
+            }
         }
     }
+
     Err("Unknown equation")
 }
+
+

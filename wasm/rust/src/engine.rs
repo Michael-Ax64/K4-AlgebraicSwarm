@@ -12,10 +12,10 @@ use crate::parser::{K4Parser, ParsedTurn, ParsedHeader, HeaderKind, TerminalArti
 // ─── BINDING THE MASTER SPECS INTO THE BINARY ──────────────────
 // This enforces the Cold-Start Rule. Blank LLM instances will now 
 // receive the full algebraic harness, rules, and Lexicons inline.
-const PROMPT_VALIDATOR: &str = include_str!("../../../prompts/K4-AlgebraicIntakeValidator.md");
-const PROMPT_BRIDGE: &str = include_str!("../../../prompts/K4-AlgebraicIntentBridge.md");
-const PROMPT_CONTROLLER: &str = include_str!("../../../prompts/K4-AlgebraicSwarmController.md");
-const PROMPT_PARADOX: &str = include_str!("../../../prompts/K4-ParadoxEngine.md");
+const PROMPT_VALIDATOR: &str = include_str!("../../prompts/AlgebraicIntakeValidator.md");
+const PROMPT_BRIDGE: &str = include_str!("../../prompts/AlgebraicIntentBridge.md");
+const PROMPT_CONTROLLER: &str = include_str!("../../prompts/AlgebraicSwarmController.md");
+const PROMPT_PARADOX: &str = include_str!("../../prompts/AlgebraicParadoxEngine.md");
 // ───────────────────────────────────────────────────────────────
 
 #[derive(Debug, Serialize, Deserialize)]

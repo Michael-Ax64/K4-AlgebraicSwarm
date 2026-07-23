@@ -56,24 +56,10 @@ pub enum TerminalArtifact {
     FaceRunnerPrompt(String),
     PhaseTransitionRecord(String),
     PossibilityMap(String),
-    HeldParadoxes(String), // Enables the interactive pause for the Paradox Engine
+    HeldParadoxes(String),
     PlainText(String),
 }
 
-/// A parsed `[STATE]` header, tagged by which K4 instrument emitted it.
-///
-/// **This is the admission record from the parser's airlock.** The four
-/// variants are the four stations in the process — Validator, Bridge,
-/// Controller, Paradox — and each variant's payload is the shape appropriate
-/// to that station (see the module-level comment for what each carries and why).
-///
-/// The header shapes are not accidental drift across the specs. They are the
-/// routing topology showing through in the type system: the state carrier at
-/// each station is exactly the information needed to resume at that station.
-/// A Bridge header cannot say `CYCLE` because the Bridge is pre-cycle; a
-/// Controller header cannot say `RHO` because coherence scoring is upstream
-/// Bridge work. Classifying-then-dispatching is what admits each shape into
-/// its own typed slot.
 #[derive(Debug, Clone, PartialEq)]
 pub enum ParsedHeader {
     Validator(ValidatorHeader),
@@ -92,7 +78,6 @@ impl ParsedHeader {
         }
     }
 
-    /// Convenience for the many code paths that only make sense for a Controller.
     pub fn as_controller(&self) -> Option<&ControllerHeader> {
         if let ParsedHeader::Controller(h) = self { Some(h) } else { None }
     }
@@ -174,22 +159,6 @@ impl K4Parser {
         Ok(ParsedTurn { header, bwr, computation, artifact })
     }
 
-    /// The airlock traversal, input → process → output:
-    ///
-    /// 1. **Input**: a raw `[STATE] …` header line.
-    /// 2. **Process** — classify by the presence of station-marker keys:
-    ///    `GATE` → Validator, `MODE=paradox` → Paradox, `PHASE`-without-`CYCLE`
-    ///    → Bridge, `CYCLE` → Controller. Then dispatch to the per-station
-    ///    parser that knows the shape *that* station carries.
-    /// 3. **Output**: a `ParsedHeader` variant. Nothing is coerced across
-    ///    stations; a Bridge header stays Bridge-shaped, a Controller header
-    ///    stays Controller-shaped.
-    ///
-    /// This is the Validator's blanket applied one level down: the Validator
-    /// is the blanket at the *operator* boundary; this function is the blanket
-    /// at the *message* boundary. Both do the same thing — recognize which
-    /// exterior sent the message, admit it in the shape appropriate for that
-    /// sender, and hand a typed result to the interior.
     fn parse_and_validate_header(header_line: &str) -> Result<ParsedHeader, ParseError> {
         let content = header_line.trim_start_matches("[STATE]").trim();
         let mut map = HashMap::new();
@@ -200,15 +169,11 @@ impl K4Parser {
             }
         }
 
-        // Classification-then-dispatch. Order matters: check MODE=paradox
-        // before CYCLE (Paradox headers may carry CYCLE-like fields in future
-        // extensions; MODE=paradox is the definitive marker).
         if map.contains_key("GATE") {
             Self::parse_validator_header(&map).map(ParsedHeader::Validator)
         } else if map.get("MODE").map(|s| s.as_str()) == Some("paradox") {
             Self::parse_paradox_header(&map).map(ParsedHeader::Paradox)
         } else if map.contains_key("PHASE") && !map.contains_key("CYCLE") {
-            // PHASE-and-no-CYCLE is unambiguous Bridge. If both present, treat as Controller.
             Self::parse_bridge_header(&map).map(ParsedHeader::Bridge)
         } else if map.contains_key("CYCLE") {
             Self::parse_controller_header(&map).map(ParsedHeader::Controller)
@@ -358,22 +323,41 @@ impl K4Parser {
     fn parse_paradox_header(map: &HashMap<String, String>) -> Result<ParadoxHeader, ParseError> {
         let turn = map.get("TURN").ok_or(ParseError::MalformedHeader("Missing TURN".into()))?
             .parse::<u32>().map_err(|_| ParseError::MalformedHeader("TURN must be u32".into()))?;
+        
+        let mut parsed_at_from_anchor = None;
+
         let anchor = match map.get("ANCHOR").map(|s| s.trim()) {
             Some("full")      | Some("full-stance") => AnchorKind::Full,
             Some("home-only") | Some("home_only")   => AnchorKind::HomeOnly,
             Some("face-only") | Some("face_only")   => AnchorKind::FaceOnly,
-            Some(other) => return Err(ParseError::MalformedHeader(format!("Unknown ANCHOR {}", other))),
+            Some(other) => {
+                // If the LLM crammed the Stance into the ANCHOR field, parse it and assume Full.
+                if let Ok(stance) = parse_stance_from_name(other) {
+                    parsed_at_from_anchor = Some(stance);
+                    AnchorKind::Full
+                } else {
+                    return Err(ParseError::MalformedHeader(format!("Unknown ANCHOR {}", other)));
+                }
+            },
             None => return Err(ParseError::MalformedHeader("Missing ANCHOR".into())),
         };
-        // AT may be a stance name or blank
+
         let at = match map.get("AT").map(|s| s.trim()) {
-            Some("") | Some("—") | Some("-") | None => None,
-            Some(s) => Some(parse_stance_from_name(s).map_err(ParseError::InvalidStance)?),
+            Some("") | Some("—") | Some("-") | None => parsed_at_from_anchor,
+            Some(s) => {
+                if let Ok(stance) = parse_stance_from_name(s) {
+                    Some(stance)
+                } else {
+                    parsed_at_from_anchor
+                }
+            },
         };
+        
         let rung = map.get("RUNG").map(|s| s.trim()).unwrap_or("0")
             .parse::<u32>().map_err(|_| ParseError::MalformedHeader("RUNG must be u32".into()))?;
         let recognized = map.get("RECOGNIZED").map(|s| s.trim()).unwrap_or("0")
             .parse::<u32>().map_err(|_| ParseError::MalformedHeader("RECOGNIZED must be u32".into()))?;
+        
         Ok(ParadoxHeader { turn, anchor, at, rung, recognized })
     }
 
@@ -420,7 +404,6 @@ impl K4Parser {
     }
 }
 
-// Suppress "unused" warning on the imported Stance — used in doc-tests / future work.
 #[allow(dead_code)]
 fn _stance_typecheck(_s: Stance) {}
 
@@ -456,3 +439,4 @@ fn parse_face(face_str: &str) -> Result<Option<Pole>, ParseError> {
         Ok(Some(parse_pole(f)?))
     }
 }
+

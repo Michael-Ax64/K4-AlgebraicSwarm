@@ -1,9 +1,9 @@
-// wasm/ts/src/bridge.ts
+// wasm/src/bridge.ts
 
 import {
   uiState, chatLog, engineHeader, workingSurface, braidHistory, activeThreadId,
-  currentRole, currentMode, braidThreads, selectedThreadId, sandboxes, manualPrompt,
-  Pole, SlotState, EngineHeader, SurfaceSlot, PtrSummary, HeldRole, ThreadShape
+  currentRole, currentMode, braidThreads, selectedThreadId, sandboxes, manualPrompt, apiLog,
+  manifoldLog, lastQuery, Pole, SlotState, EngineHeader, SurfaceSlot, PtrSummary, HeldRole, ThreadShape
 } from './state';
 import { activeWorldConfig, getActiveVocabContext, corpusGrid } from './ledger/grid-state';
 import { loadVfs, persistVfs } from './persistence';
@@ -12,24 +12,34 @@ import init, { create_engine_with_state } from 'k4_manifold';
 
 let engine: any;
 
-// Async boot sequence to load the .wasm binary
-async function bootAirlock() {
+function logManifold(type: 'info'|'warn'|'error', source: 'system'|'engine'|'bridge'|'parser', msg: string) {
+    manifoldLog.value = [...manifoldLog.value, {
+        id: crypto.randomUUID(), ts: Date.now(), source, type, message: msg
+    }];
+}
+
+// EXPORTED: Must be awaited by main.ts before UI mounts
+export async function bootAirlock() {
   try {
     await init();
     const savedVfs = await loadVfs();
     engine = create_engine_with_state(savedVfs);
     console.log("🟢 [Airlock] Rust K4 Engine coupled successfully.");
+    logManifold('info', 'engine', 'Rust K4 Engine coupled successfully.');
     syncEngineState();
   } catch (err) {
     console.warn("🟠 [Airlock] Wasm Engine unavailable. Booting Integrity Stub.", err);
+    logManifold('warn', 'system', `Wasm unavailable. Booting Integrity Stub. Error: ${err}`);
     const stub = await import('./engine-stub');
     engine = stub.create_engine_with_state(await loadVfs());
     syncEngineState();
   }
 }
-bootAirlock();
 
 export async function processSubmission(doc0Text: string): Promise<void> {
+  // Store raw intent for the upcoming 12-fold perspective loop
+  lastQuery.value = doc0Text; 
+  
   chatLog.value = [...chatLog.value, { role: 'user', text: doc0Text }];
   uiState.value = 'processing';
 
@@ -57,18 +67,16 @@ export async function submitLlmPaste(llmResponseText: string): Promise<void> {
   await runEngineLoop(command);
 }
 
-
 // WARM CHAT BYPASS: Bypasses corpus injection for conversational continuity
 export async function processUserReply(replyText: string): Promise<void> {
-    chatLog.value = [...chatLog.value, { role: 'user', text: replyText }];
-    uiState.value = 'processing';
+  chatLog.value = [...chatLog.value, { role: 'user', text: replyText }];
+  uiState.value = 'processing';
 
-    // Direct step without step_submission wrapper
-    let command = engine.step(replyText);
-    syncEngineState();
-    await runEngineLoop(command);
+  // Direct step without step_submission wrapper
+  let command = engine.step(replyText);
+  syncEngineState();
+  await runEngineLoop(command);
 }
-
 
 async function runEngineLoop(initialCommand: any) {
   let command = initialCommand;
@@ -82,26 +90,38 @@ async function runEngineLoop(initialCommand: any) {
           return; 
         }
         try {
+          const outId = crypto.randomUUID();
+          apiLog.value = [...apiLog.value, {
+            id: outId, ts: Date.now(), direction: 'out', role: currentRole.value.toLowerCase() as any,
+            temperature: currentMode.value === 'cold' ? 'cold' : 'warm', bodyText: command.prompt
+          }];
+
           const llmResponse = await callBuiltInAPI(config, command.prompt, false);
+
+          apiLog.value = [...apiLog.value, {
+            id: crypto.randomUUID(), ts: Date.now(), direction: 'in', role: currentRole.value.toLowerCase() as any,
+            temperature: currentMode.value === 'cold' ? 'cold' : 'warm', bodyText: llmResponse, linkedExchangeId: outId
+          }];
+
           command = engine.step(llmResponse);
           syncEngineState();
         } catch (err) {
-          chatLog.value = [...chatLog.value, { role: 'error', text: `API failed: ${err}. Falling back to manual.` }];
-          manualPrompt.value = command.prompt;
-          uiState.value = 'awaiting_llm_paste';
-          return;
+          logManifold('error', 'bridge', `API Call Failed: ${err}`);
+          throw new Error(`API failed: ${err}`);
         }
         break;
-      }
+      };
       case 'AwaitUser':
         chatLog.value = [...chatLog.value, { role: 'system', text: command.text }];
         uiState.value = 'awaiting_user';
         return;
       case 'Halt':
+        logManifold('warn', 'engine', `HALT: ${command.reason}`);
         chatLog.value = [...chatLog.value, { role: 'error', text: `HALT: ${command.reason}` }];
         uiState.value = 'halted';
         return;
       case 'Success':
+        logManifold('info', 'engine', `Success: ${command.message}`);
         chatLog.value = [...chatLog.value, { role: 'system', text: `Success: ${command.message}` }];
         uiState.value = 'idle';
         return;
@@ -111,6 +131,7 @@ async function runEngineLoop(initialCommand: any) {
     }
   }
 }
+
 
 interface VfsShape {
   braid?: { active_thread_id: string | null; threads: Record<string, ThreadShape>; };
@@ -159,13 +180,27 @@ function ptrToHeader(ptr: any): EngineHeader {
     path: ptr.path_traversed, heldPole: ptr.held_pole, heldRole: normalizeHeldRole(ptr.held_role), health: ptr.health,
   };
 }
-function normalizeHeldRole(raw: string): HeldRole { return raw?.toLowerCase() === 'material' ? 'material' : 'nil'; }
+
+function normalizeHeldRole(raw: string): HeldRole { 
+  return raw?.toLowerCase() === 'material' ? 'material' : 'nil'; 
+}
+
 function snapshotToSlots(snapshot: Record<Pole, { content: string, state: SlotState }>): SurfaceSlot[] {
-  return (['P', 'U', 'I', 'R'] as Pole[]).map(pole => ({ pole, content: snapshot[pole]?.content ?? null, state: snapshot[pole]?.state ?? 'Unwritten' }));
+  return (['P', 'U', 'I', 'R'] as Pole[]).map(pole => ({ 
+    pole, 
+    content: snapshot[pole]?.content ?? null, 
+    state: snapshot[pole]?.state ?? 'Unwritten' 
+  }));
 }
+
 function emptySurface(): SurfaceSlot[] {
-  return (['P', 'U', 'I', 'R'] as Pole[]).map(pole => ({ pole, content: null, state: 'Unwritten' as SlotState }));
+  return (['P', 'U', 'I', 'R'] as Pole[]).map(pole => ({ 
+    pole, 
+    content: null, 
+    state: 'Unwritten' as SlotState 
+  }));
 }
+
 function collectPtrs(vfs: VfsShape): PtrSummary[] {
   const out: PtrSummary[] = [];
   const safeBraid = vfs.braid || { threads: {} };
