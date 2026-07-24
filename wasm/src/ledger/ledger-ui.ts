@@ -1,14 +1,15 @@
 // wasm/ts/src/ledger/ledger-ui.ts
 import { createEffect } from '../reactive';
 import {
-  worldsGrid, levelsGrid, vocabGrid, circuitGrid, ledgerGrid, corpusGrid,
-  selectedWorldId, selectedLevelId, activeTab, activeWorldConfig, LedgerTab,
+  worldsGrid, languagesGrid, vocabGrid, circuitGrid, ledgerGrid, corpusGrid,
+  selectedWorldId, selectedLanguageId, activeTab, activeWorldConfig, LedgerTab,
   addVocabTerm, addCorpusDoc, deleteCorpusDoc
 } from './grid-state';
 
 import { vfsDb } from './fs';
 import { K4Type, ElementRole } from './schema';
 import { autoMapDomain, compileOntology, buildOntologyPrompt, parseAndSaveOntology } from './ontology-compiler';
+import { h } from '../dom';
 
 
 function requireEl<T extends HTMLElement = HTMLElement>(id: string): T {
@@ -17,53 +18,31 @@ function requireEl<T extends HTMLElement = HTMLElement>(id: string): T {
   return el as T;
 }
 
-const sidebarEl = requireEl('ledger-sidebar');
-const gridHeaderEl = requireEl('ledger-tabs');
-const gridBodyEl = requireEl('ledger-grid-body');
+const sidebarEl = document.getElementById('ledger-sidebar');
+const gridHeaderEl = document.getElementById('ledger-tabs');
+const gridBodyEl = document.getElementById('ledger-grid-body');
 
 // Helper for XSS-safe DOM node creation
-function el<K extends keyof HTMLElementTagNameMap>(
-  tag: K,
-  props: Partial<HTMLElementTagNameMap[K]> & { dataset?: Record<string, string> } = {},
-  children: (string | Node)[] = []
-): HTMLElementTagNameMap[K] {
-  const element = document.createElement(tag);
-  for (const [key, value] of Object.entries(props)) {
-    if (key === 'dataset' && value) {
-      for (const [dKey, dVal] of Object.entries(value)) {
-        element.dataset[dKey] = dVal as string;
-      }
-    } else {
-      (element as any)[key] = value;
-    }
-  }
-  for (const child of children) {
-    if (typeof child === 'string') {
-      element.appendChild(document.createTextNode(child));
-    } else {
-      element.appendChild(child);
-    }
-  }
-  return element;
-}
+
 
 createEffect(() => {
+  if (!sidebarEl) return;
   const worlds = worldsGrid.value;
-  const levels = levelsGrid.value;
+  const levels = languagesGrid.value;
   const activeW = selectedWorldId.value;
-  const activeL = selectedLevelId.value;
+  const activeL = selectedLanguageId.value;
   sidebarEl.innerHTML = '';
   
   worlds.forEach(w => {
-    const wDiv = el('div', { className: `world-item ${w.id === activeW ? 'active' : ''}`, textContent: `🌍 ${w.name}` });
+    const wDiv = h('div', { className: `world-item ${w.id === activeW ? 'active' : ''}`, textContent: `🌍 ${w.name}` });
     wDiv.addEventListener('click', () => { selectedWorldId.value = w.id; });
     sidebarEl.appendChild(wDiv);
     
     if (w.id === activeW) {
-      const lContainer = el('div', { className: 'level-container' });
+      const lContainer = h('div', { className: 'level-container' });
       levels.forEach(l => {
-        const lDiv = el('div', { className: `level-item ${l.id === activeL ? 'active' : ''}`, textContent: `↳ ${l.name}` });
-        lDiv.addEventListener('click', (e) => { e.stopPropagation(); selectedLevelId.value = l.id; });
+        const lDiv = h('div', { className: `level-item ${l.id === activeL ? 'active' : ''}`, textContent: `↳ ${l.name}` });
+        lDiv.addEventListener('click', (e) => { e.stopPropagation(); selectedLanguageId.value = l.id; });
         lContainer.appendChild(lDiv);
       });
       sidebarEl.appendChild(lContainer);
@@ -72,6 +51,7 @@ createEffect(() => {
 });
 
 createEffect(() => {
+  if (!gridHeaderEl) return;
   const tab = activeTab.value;
   gridHeaderEl.innerHTML = '';
   
@@ -84,18 +64,19 @@ createEffect(() => {
   ];
 
   tabs.forEach(t => {
-    const btn = el('button', { textContent: t.label, className: tab === t.id ? 'active' : '' });
+    const btn = h('button', { textContent: t.label, className: tab === t.id ? 'active' : '' });
     btn.addEventListener('click', () => { activeTab.value = t.id; });
     gridHeaderEl.appendChild(btn);
   });
 });
 
 createEffect(() => {
+  if (!gridBodyEl) return;
   const tab = activeTab.value;
   gridBodyEl.innerHTML = '';
   
-  if ((tab === 'vocab' || tab === 'circuit' || tab === 'ledger') && !selectedLevelId.value) {
-    gridBodyEl.appendChild(el('div', { className: 'empty', textContent: 'Select a Level to view data.' }));
+  if ((tab === 'vocab' || tab === 'circuit' || tab === 'ledger') && !selectedLanguageId.value) {
+    gridBodyEl.appendChild(h('div', { className: 'empty', textContent: 'Select a Level to view data.' }));
     return;
   }
   
@@ -111,26 +92,26 @@ function renderSettings() {
     const activeW = activeWorldConfig.value;
     if (!activeW) return;
 
-    const card = el('div', { className: 'circuit-card' });
+    const card = h('div', { className: 'circuit-card' });
     card.style.maxWidth = '500px';
 
-    const providerSelect = el('select', {}, [
-        el('option', { value: 'manual', textContent: 'Manual (Copy/Paste)', selected: activeW.apiProvider === 'manual' }),
-        el('option', { value: 'auto', textContent: 'Auto (Built-in AI / Local)', selected: activeW.apiProvider === 'auto' }),
-        el('option', { value: 'openai', textContent: 'OpenAI', selected: activeW.apiProvider === 'openai' }),
-        el('option', { value: 'custom', textContent: 'Custom / Local', selected: activeW.apiProvider === 'custom' })
+    const providerSelect = h('select', {}, [
+        h('option', { value: 'manual', textContent: 'Manual (Copy/Paste)', selected: activeW.apiProvider === 'manual' }),
+        h('option', { value: 'auto', textContent: 'Auto (Built-in AI / Local)', selected: activeW.apiProvider === 'auto' }),
+        h('option', { value: 'openai', textContent: 'OpenAI', selected: activeW.apiProvider === 'openai' }),
+        h('option', { value: 'custom', textContent: 'Custom / Local', selected: activeW.apiProvider === 'custom' })
     ]);
 
-    const keyInput = el('input', { type: 'password', value: activeW.apiKey || '' });
-    const urlInput = el('input', { type: 'text', value: activeW.apiBaseUrl || '', placeholder: 'https://api.openai.com/v1/chat/completions' });
+    const keyInput = h('input', { type: 'password', value: activeW.apiKey || '' });
+    const urlInput = h('input', { type: 'text', value: activeW.apiBaseUrl || '', placeholder: 'https://api.openai.com/v1/chat/completions' });
     
     // Global Corpus Persistence Toggle
-    const persistCheck = el('input', { type: 'checkbox', checked: activeW.persistCorpus });
-    const persistLabel = el('label', { textContent: ' Persist Corpus Documents to IndexedDB' });
+    const persistCheck = h('input', { type: 'checkbox', checked: activeW.persistCorpus });
+    const persistLabel = h('label', { textContent: ' Persist Corpus Documents to IndexedDB' });
     persistLabel.style.cursor = 'pointer';
     persistLabel.addEventListener('click', () => { persistCheck.checked = !persistCheck.checked; });
 
-    const saveBtn = el('button', { textContent: 'Save Configuration' });
+    const saveBtn = h('button', { textContent: 'Save Configuration' });
     saveBtn.addEventListener('click', async () => {
         const updatedWorld = {
             ...activeW,
@@ -146,13 +127,13 @@ function renderSettings() {
     });
 
     card.append(
-        el('h4', { textContent: 'World API Configuration' }),
-        el('label', { textContent: 'Provider:' }), el('br'), providerSelect, el('br'), el('br'),
-        el('label', { textContent: 'API Key:' }), el('br'), keyInput, el('br'), el('br'),
-        el('label', { textContent: 'Base URL (Optional):' }), el('br'), urlInput, el('br'), el('br'),
-        el('hr'),
-        el('h4', { textContent: 'Thermodynamic Environment' }),
-        el('div', { style: 'display: flex; align-items: center; gap: 0.5rem; margin-bottom: 1rem;' }, [persistCheck, persistLabel]),
+        h('h4', { textContent: 'World API Configuration' }),
+        h('label', { textContent: 'Provider:' }), h('br'), providerSelect, h('br'), h('br'),
+        h('label', { textContent: 'API Key:' }), h('br'), keyInput, h('br'), h('br'),
+        h('label', { textContent: 'Base URL (Optional):' }), h('br'), urlInput, h('br'), h('br'),
+        h('hr'),
+        h('h4', { textContent: 'Thermodynamic Environment' }),
+        h('div', { style: 'display: flex; align-items: center; gap: 0.5rem; margin-bottom: 1rem;' }, [persistCheck, persistLabel]),
         saveBtn
     );
     gridBodyEl.appendChild(card);
@@ -160,57 +141,57 @@ function renderSettings() {
 
 
 function renderVocabGrid() {
-  const table = el('table');
-  const trHead = el('tr', {}, [
-    el('th', { textContent: 'Term (Noun)' }), el('th', { textContent: 'K4 Pole/Edge' }), el('th', { textContent: 'Role' }), el('th')
+  const table = h('table');
+  const trHead = h('tr', {}, [
+    h('th', { textContent: 'Term (Noun)' }), h('th', { textContent: 'K4 Pole/Edge' }), h('th', { textContent: 'Role' }), h('th')
   ]);
   table.appendChild(trHead);
   
   vocabGrid.value.forEach(v => {
-    table.appendChild(el('tr', {}, [
-      el('td', { textContent: v.term }),
-      el('td', {}, [ el('span', { className: `badge pole-${v.k4Type}`, textContent: v.k4Type }) ]),
-      el('td', {}, [ el('span', { className: `badge role-${v.role}`, textContent: v.role }) ]),
-      el('td')
+    table.appendChild(h('tr', {}, [
+      h('td', { textContent: v.term }),
+      h('td', {}, [ h('span', { className: `badge pole-${v.k4Type}`, textContent: v.k4Type }) ]),
+      h('td', {}, [ h('span', { className: `badge role-${v.role}`, textContent: v.role }) ]),
+      h('td')
     ]));
   });
 
-  const termInput = el('input', { type: 'text', placeholder: 'New Noun...' });
-  const k4Select = el('select', {}, [
-    el('option', { value: 'P', textContent: 'P (Fire/Drive)' }),
-    el('option', { value: 'U', textContent: 'U (Air/Structure)' }),
-    el('option', { value: 'I', textContent: 'I (Water/Flow)' }),
-    el('option', { value: 'R', textContent: 'R (Earth/Ground)' }),
-    el('option', { value: 'P-U', textContent: 'P-U (Exteriorize)' })
+  const termInput = h('input', { type: 'text', placeholder: 'New Noun...' });
+  const k4Select = h('select', {}, [
+    h('option', { value: 'P', textContent: 'P (Fire/Drive)' }),
+    h('option', { value: 'U', textContent: 'U (Air/Structure)' }),
+    h('option', { value: 'I', textContent: 'I (Water/Flow)' }),
+    h('option', { value: 'R', textContent: 'R (Earth/Ground)' }),
+    h('option', { value: 'P-U', textContent: 'P-U (Exteriorize)' })
   ]);
-  const roleSelect = el('select', {}, [
-    el('option', { value: 'MATERIAL', textContent: 'MATERIAL' }),
-    el('option', { value: 'SPEC', textContent: 'SPEC' }),
-    el('option', { value: 'NIL', textContent: 'NIL' })
+  const roleSelect = h('select', {}, [
+    h('option', { value: 'MATERIAL', textContent: 'MATERIAL' }),
+    h('option', { value: 'SPEC', textContent: 'SPEC' }),
+    h('option', { value: 'NIL', textContent: 'NIL' })
   ]);
   
-  const addBtn = el('button', { textContent: 'Add' });
+  const addBtn = h('button', { textContent: 'Add' });
   addBtn.addEventListener('click', async () => {
     const term = termInput.value.trim();
     if (term) await addVocabTerm(term, k4Select.value as K4Type, roleSelect.value as ElementRole);
   });
 
-  // table.appendChild(el('tr', {}, [
-  //   el('td', {}, [termInput]), el('td', {}, [k4Select]), el('td', {}, [roleSelect]), el('td', {}, [addBtn])
+  // table.appendChild(h('tr', {}, [
+  //   h('td', {}, [termInput]), h('td', {}, [k4Select]), h('td', {}, [roleSelect]), h('td', {}, [addBtn])
   // ]));
 
   // gridBodyEl.appendChild(table);
 
   
   // Auto-Map Workspace
-  const autoMapContainer = el('div', { className: 'circuit-card', style: 'margin-top: 2rem;' }, [
-    el('h4', { textContent: 'Auto-Map via Algebraic Sweeps' }),
-    el('p', { className: 'subtext', textContent: 'Enter 4 raw domain concepts. The machine will test them against the 12 equations (grouped by x + [0,3,6,9]) to determine the exact P, U, I, R topology.' })
+  const autoMapContainer = h('div', { className: 'circuit-card', style: 'margin-top: 2rem;' }, [
+    h('h4', { textContent: 'Auto-Map via Algebraic Sweeps' }),
+    h('p', { className: 'subtext', textContent: 'Enter 4 raw domain concepts. The machine will test them against the 12 equations (grouped by x + [0,3,6,9]) to determine the exact P, U, I, R topology.' })
   ]);
 
-  const rawInput = el('input', { type: 'text', placeholder: 'e.g. Plot, Character, Dialogue, Pacing', style: 'width: 70%; margin-right: 1rem;' });
-  const mapBtn = el('button', { textContent: 'Run Test-Cycle' });
-  const auditLog = el('div', { className: 'diagnostic-alert', style: 'display: none; margin-top: 1rem; font-family: monospace; font-size: 0.85rem;' });
+  const rawInput = h('input', { type: 'text', placeholder: 'e.g. Plot, Character, Dialogue, Pacing', style: 'width: 70%; margin-right: 1rem;' });
+  const mapBtn = h('button', { textContent: 'Run Test-Cycle' });
+  const auditLog = h('div', { className: 'diagnostic-alert', style: 'display: none; margin-top: 1rem; font-family: monospace; font-size: 0.85rem;' });
 
   mapBtn.addEventListener('click', async () => {
     const terms = rawInput.value.split(',').map(t => t.trim()).filter(t => t.length > 0);
@@ -259,22 +240,22 @@ function renderVocabGrid() {
 }
 
 function renderLedgerGrid() {
-  const table = el('table');
-  table.appendChild(el('tr', {}, [
-    el('th', { textContent: 'Cycle.Seq' }), el('th', { textContent: 'Stance' }), el('th', { textContent: 'Health' }),
-    el('th', { textContent: 'P' }), el('th', { textContent: 'U' }), el('th', { textContent: 'I' }), el('th', { textContent: 'R' })
+  const table = h('table');
+  table.appendChild(h('tr', {}, [
+    h('th', { textContent: 'Cycle.Seq' }), h('th', { textContent: 'Stance' }), h('th', { textContent: 'Health' }),
+    h('th', { textContent: 'P' }), h('th', { textContent: 'U' }), h('th', { textContent: 'I' }), h('th', { textContent: 'R' })
   ]));
   
   ledgerGrid.value.forEach(l => {
     const snap = l.snapshotJson ? JSON.parse(l.snapshotJson) : {};
-    table.appendChild(el('tr', {}, [
-      el('td', { textContent: `${l.cycle}.${l.seq}` }),
-      el('td', { textContent: l.stance }),
-      el('td', { textContent: l.health }),
-      el('td', { className: `state-${snap['P']?.state}`, textContent: snap['P']?.content || '-' }),
-      el('td', { className: `state-${snap['U']?.state}`, textContent: snap['U']?.content || '-' }),
-      el('td', { className: `state-${snap['I']?.state}`, textContent: snap['I']?.content || '-' }),
-      el('td', { className: `state-${snap['R']?.state}`, textContent: snap['R']?.content || '-' })
+    table.appendChild(h('tr', {}, [
+      h('td', { textContent: `${l.cycle}.${l.seq}` }),
+      h('td', { textContent: l.stance }),
+      h('td', { textContent: l.health }),
+      h('td', { className: `state-${snap['P']?.state}`, textContent: snap['P']?.content || '-' }),
+      h('td', { className: `state-${snap['U']?.state}`, textContent: snap['U']?.content || '-' }),
+      h('td', { className: `state-${snap['I']?.state}`, textContent: snap['I']?.content || '-' }),
+      h('td', { className: `state-${snap['R']?.state}`, textContent: snap['R']?.content || '-' })
     ]));
   });
   gridBodyEl.appendChild(table);
@@ -282,31 +263,31 @@ function renderLedgerGrid() {
 
 function renderCorpusManager() {
   const docs = corpusGrid.value;
-  const container = el('div', { className: 'corpus-manager' });
+  const container = h('div', { className: 'corpus-manager' });
   
   container.append(
-    el('h4', { textContent: 'World Corpus Documents (D1..N)' }),
-    el('p', { className: 'subtext', textContent: 'Attached to the Validator\'s Markov Blanket alongside Document 0.' })
+    h('h4', { textContent: 'World Corpus Documents (D1..N)' }),
+    h('p', { className: 'subtext', textContent: 'Attached to the Validator\'s Markov Blanket alongside Document 0.' })
   );
 
-  const listEl = el('div');
+  const listEl = h('div');
   if (docs.length === 0) {
-    listEl.appendChild(el('div', { className: 'empty', textContent: 'No corpus documents attached.' }));
+    listEl.appendChild(h('div', { className: 'empty', textContent: 'No corpus documents attached.' }));
   } else {
     docs.forEach(doc => {
-      const rmBtn = el('button', { className: 'remove-corpus-btn', textContent: '✕ Remove' });
+      const rmBtn = h('button', { className: 'remove-corpus-btn', textContent: '✕ Remove' });
       rmBtn.addEventListener('click', () => deleteCorpusDoc(doc.id));
       
-      const header = el('div', { className: 'corpus-header' }, [ el('strong', { textContent: doc.name }), rmBtn ]);
-      const preview = el('pre', { className: 'corpus-preview', textContent: doc.content.substring(0, 200) + (doc.content.length > 200 ? '...' : '') });
-      listEl.appendChild(el('div', { className: 'corpus-row' }, [ header, preview ]));
+      const header = h('div', { className: 'corpus-header' }, [ h('strong', { textContent: doc.name }), rmBtn ]);
+      const preview = h('pre', { className: 'corpus-preview', textContent: doc.content.substring(0, 200) + (doc.content.length > 200 ? '...' : '') });
+      listEl.appendChild(h('div', { className: 'corpus-row' }, [ header, preview ]));
     });
   }
   container.appendChild(listEl);
 
-  const nameInput = el('input', { type: 'text', placeholder: 'Document Name (e.g., API_Specs.md)' });
-  const contentInput = el('textarea', { placeholder: 'Document content...' });
-  const addBtn = el('button', { textContent: 'Attach Document' });
+  const nameInput = h('input', { type: 'text', placeholder: 'Document Name (e.g., API_Specs.md)' });
+  const contentInput = h('textarea', { placeholder: 'Document content...' });
+  const addBtn = h('button', { textContent: 'Attach Document' });
   addBtn.addEventListener('click', () => {
     if (nameInput.value.trim() && contentInput.value.trim()) {
       addCorpusDoc(nameInput.value.trim(), contentInput.value.trim());
@@ -314,7 +295,7 @@ function renderCorpusManager() {
     }
   });
 
-  container.appendChild(el('div', { className: 'corpus-add-form' }, [ nameInput, contentInput, addBtn ]));
+  container.appendChild(h('div', { className: 'corpus-add-form' }, [ nameInput, contentInput, addBtn ]));
   gridBodyEl.appendChild(container);
 }
 
@@ -324,30 +305,30 @@ function renderCircuitWorkbench() {
   const circuits = circuitGrid.value;
   
   if (circuits.length === 0) { 
-    const emptyState = el('div', { className: 'circuit-card', style: 'max-width: 800px; margin: 0 auto;' });
-    emptyState.appendChild(el('h4', { textContent: 'No Topology Compiled' }));
-    emptyState.appendChild(el('p', { className: 'subtext', textContent: 'The vocabulary is defined. The Algebra must now unfold the 12-facet possibility space.' }));
+    const emptyState = h('div', { className: 'circuit-card', style: 'max-width: 800px; margin: 0 auto;' });
+    emptyState.appendChild(h('h4', { textContent: 'No Topology Compiled' }));
+    emptyState.appendChild(h('p', { className: 'subtext', textContent: 'The vocabulary is defined. The Algebra must now unfold the 12-facet possibility space.' }));
     
     const isManual = activeWorldConfig.value?.apiProvider === 'manual';
 
     if (isManual) {
       // THE MANUAL "BRING YOUR OWN LLM" WORKFLOW
-      emptyState.appendChild(el('p', { textContent: 'Manual Mode is active. Copy this prompt to an external LLM (e.g., ChatGPT or Claude), then paste the JSON response below:', style: 'margin-top: 1rem; color: #a3a3a3;' }));
+      emptyState.appendChild(h('p', { textContent: 'Manual Mode is active. Copy this prompt to an external LLM (e.g., ChatGPT or Claude), then paste the JSON response below:', style: 'margin-top: 1rem; color: #a3a3a3;' }));
       
       const promptStr = buildOntologyPrompt(vocabGrid.value);
-      const promptArea = el('textarea', { readOnly: true, value: promptStr, style: 'width: 100%; height: 120px; font-family: monospace; font-size: 0.85rem; margin-bottom: 0.5rem;' });
+      const promptArea = h('textarea', { readOnly: true, value: promptStr, style: 'width: 100%; height: 120px; font-family: monospace; font-size: 0.85rem; margin-bottom: 0.5rem;' });
       
-      const copyBtn = el('button', { textContent: '📋 Copy Prompt' });
+      const copyBtn = h('button', { textContent: '📋 Copy Prompt' });
       copyBtn.addEventListener('click', () => {
         navigator.clipboard.writeText(promptStr);
         copyBtn.textContent = 'Copied!';
         setTimeout(() => copyBtn.textContent = '📋 Copy Prompt', 2000);
       });
 
-      const pasteArea = el('textarea', { placeholder: 'Paste the generated JSON here...', style: 'width: 100%; height: 120px; font-family: monospace; font-size: 0.85rem; margin-top: 1rem; margin-bottom: 0.5rem;' });
-      const errorMsg = el('p', { className: 'diagnostic-alert diag-leading', style: 'display: none;' });
+      const pasteArea = h('textarea', { placeholder: 'Paste the generated JSON here...', style: 'width: 100%; height: 120px; font-family: monospace; font-size: 0.85rem; margin-top: 1rem; margin-bottom: 0.5rem;' });
+      const errorMsg = h('p', { className: 'diagnostic-alert diag-leading', style: 'display: none;' });
 
-      const saveBtn = el('button', { textContent: 'Parse & Save Topology' });
+      const saveBtn = h('button', { textContent: 'Parse & Save Topology' });
       saveBtn.addEventListener('click', async () => {
         if (!pasteArea.value.trim()) return;
         saveBtn.disabled = true;
@@ -355,11 +336,11 @@ function renderCircuitWorkbench() {
         errorMsg.style.display = 'none';
 
         try {
-          await parseAndSaveOntology(selectedLevelId.value!, pasteArea.value);
+          await parseAndSaveOntology(selectedLanguageId.value!, pasteArea.value);
           // Force reload to pull new circuits
-          const lId = selectedLevelId.value;
-          selectedLevelId.value = null; 
-          setTimeout(() => selectedLevelId.value = lId, 50);
+          const lId = selectedLanguageId.value;
+          selectedLanguageId.value = null; 
+          setTimeout(() => selectedLanguageId.value = lId, 50);
         } catch (err: any) {
           errorMsg.textContent = `Invalid JSON or Parsing Error: ${err.message}`;
           errorMsg.style.display = 'block';
@@ -372,8 +353,8 @@ function renderCircuitWorkbench() {
 
     } else {
       // THE AUTOMATED API WORKFLOW
-      const compileBtn = el('button', { textContent: 'Compile 12-Fold Ontology' });
-      const errorMsg = el('p', { className: 'diagnostic-alert diag-lagging', style: 'display: none; margin-top: 1rem;' });
+      const compileBtn = h('button', { textContent: 'Compile 12-Fold Ontology' });
+      const errorMsg = h('p', { className: 'diagnostic-alert diag-lagging', style: 'display: none; margin-top: 1rem;' });
 
       compileBtn.addEventListener('click', async () => {
         compileBtn.textContent = 'Compiling Topology (Please Wait)...';
@@ -381,10 +362,10 @@ function renderCircuitWorkbench() {
         errorMsg.style.display = 'none';
 
         try {
-          await compileOntology(selectedLevelId.value!, activeWorldConfig.value!, vocabGrid.value);
-          const lId = selectedLevelId.value;
-          selectedLevelId.value = null; 
-          setTimeout(() => selectedLevelId.value = lId, 50); 
+          await compileOntology(selectedLanguageId.value!, activeWorldConfig.value!, vocabGrid.value);
+          const lId = selectedLanguageId.value;
+          selectedLanguageId.value = null; 
+          setTimeout(() => selectedLanguageId.value = lId, 50); 
         } catch (err: any) {
           errorMsg.textContent = err.message;
           errorMsg.style.display = 'block';
@@ -430,10 +411,10 @@ function renderCircuitWorkbench() {
   const inputContainer = document.getElementById('ac-inputs')!;
   
   const makeSlider = (id: string, label: string, min: string, max: string, step: string, val: number, unit: string) => {
-    const valSpan = el('span', { id: `val-${id}`, textContent: `${val.toFixed(id === 'C' ? 3 : (id === 'omega' ? 2 : 1))} ${unit}` });
-    const lbl = el('label', {}, [ el('span', { textContent: label }), valSpan ]);
-    const input = el('input', { type: 'range', id: `slider-${id}`, min, max, step, value: val.toString() });
-    return { group: el('div', { className: 'slider-group' }, [ lbl, input ]), input, valSpan };
+    const valSpan = h('span', { id: `val-${id}`, textContent: `${val.toFixed(id === 'C' ? 3 : (id === 'omega' ? 2 : 1))} ${unit}` });
+    const lbl = h('label', {}, [ h('span', { textContent: label }), valSpan ]);
+    const input = h('input', { type: 'range', id: `slider-${id}`, min, max, step, value: val.toString() });
+    return { group: h('div', { className: 'slider-group' }, [ lbl, input ]), input, valSpan };
   };
 
   const omegaS = makeSlider('omega', 'Driving Freq (ω)', '0.1', '20', '0.1', c.drivingOmega, 'rad/s');

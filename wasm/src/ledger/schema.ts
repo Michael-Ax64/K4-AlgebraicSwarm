@@ -1,68 +1,78 @@
-// wasm/ui/src/ledger/schema.ts
+// wasm/src/ledger/schema.ts
 
-export type K4Type = 
-  | 'P' | 'I' | 'U' | 'R' 
-  | 'P-U' | 'I-R' | 'P-R' | 'I-U' | 'P-I' | 'U-R'; 
-
+export type K4Type = 'P' | 'I' | 'U' | 'R' | 'P-U' | 'I-R' | 'P-R' | 'I-U' | 'P-I' | 'U-R'; 
 export type ElementRole = 'SPEC' | 'MATERIAL' | 'NIL';
 
 export interface World {
   id: string;               
   name: string;             
   description: string;
-  apiProvider: 'manual' | 'auto' | 'openai' | 'anthropic' | 'custom'; // 'manual' forces copy/paste mode
+  apiProvider: 'manual' | 'auto' | 'openai' | 'anthropic' | 'custom'; 
   apiKey: string;           
-  apiBaseUrl: string;      // useful for local models like LMStudio/Ollama
-  persistCorpus: boolean; // Accessible global var setting for this world  
+  apiBaseUrl: string;      
+  persistCorpus: boolean; 
   createdAt: number;
   updatedAt: number;
 }
 
-export interface Level {
+export interface Language {
   id: string;
   worldId: string;
   name: string;
-  levelIndex: number;
+  description?: string;
 }
 
 export interface Vocabulary {
   id: string;
-  levelId: string;
+  languageId: string;
   term: string;
   k4Type: K4Type;
   role: ElementRole;
   description: string;
 }
 
-// THE CIRCUIT MODEL (AC Extension)
-export interface CircuitState {
+export interface View {
   id: string;
-  levelId: string;
+  worldId: string;
+  languageId: string;      
   name: string;
+  description: string;
+  
+  // Innate baseline AC-coordinates
+  innateOmega: number;
+  innateR: number;
+  innateL: number;
+  innateC: number;
+}
 
-  resistanceR: number;      // R: Grounding / Dissipation / Friction
-  inductanceL: number;      // L: Memory / Momentum / Resistance to flow change
-  capacitanceC: number;     // C: Anticipation / Tension / Resistance to pressure
-  drivingOmega: number;     // ω: Current pacing / Angular Frequency
-
-  // Framework Topology Data
-  // aka Thermodynamic/AC Parameter
+export interface Circuit {
+  id: string;
+  viewId: string;
+  name: string;            
   activeFace: K4Type;
   heldAbsentVar: K4Type;
-  currentCycle: number;
-
-  // Top-down physics meets Bottom-up phenomenology
-  diagnosticVocab: string[]; // Words that elucidate and support this specific algebra
-  rewardQuestion: string;    // The diagnostic question / operational reward function
+  omega: number;
+  r: number;
+  l: number;
+  c: number;
+  diagnosticVocab: string[];
+  rewardQuestion: string;
 }
 
 export interface LedgerEntry {
   id: string;
-  circuitId: string;
+  viewId: string;          // History belongs to the View/Session
   cycle: number;
   seq: number;
-  stance: string;           
+  stance: string;          
   health: string;
   snapshotJson: string;
   createdAt: number;
+}
+
+export interface CorpusDocEntry {
+  id: string;
+  worldId: string;
+  name: string;
+  content: string;
 }

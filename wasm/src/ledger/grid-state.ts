@@ -1,145 +1,84 @@
-// wasm/ts/src/ledger/grid-state.ts
-
+// wasm/src/ledger/grid-state.ts
 import { Signal, createEffect } from '../reactive';
 import { vfsDb } from './fs';
-import {
-    World, Level, Vocabulary, CircuitState, LedgerEntry,
-    CorpusDocEntry, K4Type, ElementRole,
-} from './schema';
+import { World, Language, Vocabulary, View, Circuit, LedgerEntry, CorpusDocEntry, K4Type, ElementRole } from './schema';
 import { seedDatabaseIfEmpty } from './seed';
-
-export type LedgerTab = 'vocab' | 'corpus' | 'circuit' | 'ledger' | 'settings';
 
 export const activeWorldConfig = new Signal<World | null>(null);
 export const selectedWorldId = new Signal<string | null>(null);
-export const selectedLevelId = new Signal<string | null>(null);
-export const selectedCircuitId = new Signal<string | null>(null); // NEW: 5D Coordinate Index
-export const activeTab = new Signal<LedgerTab>('vocab');
+export const selectedLanguageId = new Signal<string | null>(null);
+export const selectedViewId = new Signal<string | null>(null);
+export const selectedCircuitId = new Signal<string | null>(null);
 
 export const worldsGrid = new Signal<World[]>([]);
-export const levelsGrid = new Signal<Level[]>([]);
+export const languagesGrid = new Signal<Language[]>([]);
+export const viewsGrid = new Signal<View[]>([]);
 export const vocabGrid = new Signal<Vocabulary[]>([]);
-export const circuitGrid = new Signal<CircuitState[]>([]);
+export const circuitGrid = new Signal<Circuit[]>([]);
 export const ledgerGrid = new Signal<LedgerEntry[]>([]);
 export const corpusGrid = new Signal<CorpusDocEntry[]>([]);
 
 export async function bootLedger(): Promise<void> {
     await vfsDb.init();
     await seedDatabaseIfEmpty();
-    await refreshWorlds();
-}
-
-export async function refreshWorlds(): Promise<void> {
     worldsGrid.value = await vfsDb.getWorlds();
+    if (worldsGrid.value.length > 0) selectedWorldId.value = worldsGrid.value[0].id;
 }
 
+// CASCADE 1: World -> Languages, Views, Corpus
 createEffect(() => {
     const wId = selectedWorldId.value;
-    const worlds = worldsGrid.value;
     if (wId) {
-        activeWorldConfig.value = worlds.find(w => w.id === wId) ?? null;
-        
-        // Hydrate Levels and Corpus for the selected World
-        void Promise.all([
-            vfsDb.getLevels(wId),
-            vfsDb.getCorpusDocs(wId)
-        ]).then(([levels, corpus]) => {
-            levelsGrid.value = levels.slice().sort((a, b) => a.levelIndex - b.levelIndex);
-            if (levels.length > 0 && !selectedLevelId.value) {
-                selectedLevelId.value = levels[0].id;
-            }
+        activeWorldConfig.value = worldsGrid.value.find(w => w.id === wId) ?? null;
+        Promise.all([vfsDb.getLanguages(wId), vfsDb.getViews(wId), vfsDb.getCorpusDocs(wId)]).then(([langs, views, corpus]) => {
+            languagesGrid.value = langs;
+            viewsGrid.value = views;
             corpusGrid.value = corpus;
         });
     } else {
-        activeWorldConfig.value = null;
-        levelsGrid.value = [];
-        corpusGrid.value = [];
-        selectedLevelId.value = null;
-        selectedCircuitId.value = null; // Clear coordinate too
+        activeWorldConfig.value = null; languagesGrid.value = []; viewsGrid.value = []; corpusGrid.value = [];
+        selectedLanguageId.value = null; selectedViewId.value = null;
     }
 });
 
-let activeFetchLevelId: string | null = null;
+// CASCADE 2: Language -> Vocab 
+// (Fires when editing a language OR when switching to a View that uses a language)
 createEffect(() => {
-    const lId = selectedLevelId.value;
-    if (!lId) {
+    // If a View is selected, prioritize its associated Language for the operational context
+    let targetLangId = selectedLanguageId.value;
+    const activeView = viewsGrid.value.find(v => v.id === selectedViewId.value);
+    if (activeView) {
+        targetLangId = activeView.languageId;
+    }
+
+    if (!targetLangId) {
         vocabGrid.value = [];
-        circuitGrid.value = [];
-        ledgerGrid.value = [];
-        selectedCircuitId.value = null;
         return;
     }
-    void loadLevelData(lId);
+    vfsDb.getVocabulary(targetLangId).then(vocabs => vocabGrid.value = vocabs);
 });
 
-async function loadLevelData(levelId: string): Promise<void> {
-    activeFetchLevelId = levelId;
-    const [vocabs, circuits] = await Promise.all([
-        vfsDb.getVocabulary(levelId),
-        vfsDb.getCircuitState(levelId),
-    ]);
-    const entriesPerCircuit = await Promise.all(
-        circuits.map(c => vfsDb.getLedgerEntries(c.id))
-    );
-    if (activeFetchLevelId !== levelId) return;
-    const entries = entriesPerCircuit.flat();
-    vocabGrid.value = vocabs;
-    circuitGrid.value = circuits;
-    
-    // Auto-select the first coordinate so Pane 2 and 3 aren't dead
-    if (circuits.length > 0 && !selectedCircuitId.value) {
-        selectedCircuitId.value = circuits[0].id;
+// CASCADE 3: View -> Circuits & Ledger
+createEffect(() => {
+    const vId = selectedViewId.value;
+    if (!vId) {
+        circuitGrid.value = []; ledgerGrid.value = []; selectedCircuitId.value = null;
+        return;
     }
+    Promise.all([vfsDb.getCircuits(vId), vfsDb.getLedgerEntries(vId)]).then(([circuits, entries]) => {
+        circuitGrid.value = circuits;
+        ledgerGrid.value = entries.sort((a, b) => (b.cycle - a.cycle) || (b.seq - a.seq));
+    });
+});
 
-    ledgerGrid.value = entries.sort((a, b) => (b.cycle - a.cycle) || (b.seq - a.seq));
-}
-
-export async function addVocabTerm(term: string, k4Type: K4Type, role: ElementRole): Promise<void> {
-    const lId = selectedLevelId.value;
-    if (!lId) return;
-    const newVocab: Vocabulary = {
-        id: crypto.randomUUID(),
-        levelId: lId,
-        term,
-        k4Type,
-        role,
-        description: '',
-    };
-    await vfsDb.upsertVocabulary(newVocab);
-    vocabGrid.value = await vfsDb.getVocabulary(lId);
-}
-
-export async function addCorpusDoc(name: string, content: string): Promise<void> {
-    const wId = selectedWorldId.value;
-    if (!wId) return;
-    
-    const doc: CorpusDocEntry = {
-        id: crypto.randomUUID(),
-        worldId: wId,
-        name,
-        content,
-    };
-    corpusGrid.value = [...corpusGrid.value, doc];
-    
-    const world = activeWorldConfig.value;
-    if (world?.persistCorpus) {
-        await vfsDb.upsertCorpusDoc(doc);
+export async function addVocabTerm(term: string, k4Type: K4Type, role: ElementRole, languageId: string): Promise<void> { 
+    await vfsDb.upsertVocabulary({ id: crypto.randomUUID(), languageId, term, k4Type, role, description: '' });
+    if (selectedLanguageId.value === languageId || viewsGrid.value.find(v => v.id === selectedViewId.value)?.languageId === languageId) {
+        vocabGrid.value = await vfsDb.getVocabulary(languageId);
     }
 }
-
-export async function deleteCorpusDoc(id: string): Promise<void> {
-    corpusGrid.value = corpusGrid.value.filter(d => d.id !== id);
-    const world = activeWorldConfig.value;
-    if (world?.persistCorpus) {
-        await vfsDb.deleteCorpusDoc(id);
-    }
-}
-
 export function getActiveVocabContext(): string {
     const vocabs = vocabGrid.value;
     if (vocabs.length === 0) return 'No domain vocabulary defined.';
-    return vocabs
-        .map(v => `- [${v.k4Type}] (${v.role}): ${v.term}`)
-        .join('\n');
+    return vocabs.map(v => `- [${v.k4Type}] (${v.role}): ${v.term}`).join('\n');
 }
-

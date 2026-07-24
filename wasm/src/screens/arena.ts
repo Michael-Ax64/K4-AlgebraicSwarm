@@ -2,43 +2,60 @@
 
 import { createEffect } from '../reactive';
 import { screenRegistry } from './registry';
-import { selectedLevelId } from '../ledger/grid-state';
+import { selectedLanguageId, selectedViewId } from '../ledger/grid-state';
+import { processUserReply } from '../bridge';
+import { uiState } from '../state';
+import { pushScreen } from '../router';
 import { Whole } from '../arena/whole';
 import { arenaCache, currentArenaPath, activeWhole, getArenaPathKey } from './arena-state';
-
+import { h } from '../dom';
 
 export function mountArenaScreen(container: HTMLElement): () => void {
-    const layout = document.createElement('div');
-    layout.style.display = 'flex';
-    layout.style.flexDirection = 'column';
-    layout.style.height = '100%';
-    
-    layout.innerHTML = `
-        <div style="display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid #ccc; padding-bottom: 10px; margin-bottom: 10px; flex: 0 0 auto;">
-            <h2 style="margin: 0; color: #14161A;">Arena</h2>
-        </div>
-        <div id="arena-content" style="flex: 1; overflow-y: auto; background: #fff; border: 1px solid #DAD5CB; border-radius: 4px; padding: 15px; display: flex; flex-direction: column; min-height: 0;"></div>
-    `;
+    const contentContainer = h('div', { 
+        style: { flex: 1, overflowY: 'auto', backgroundColor: 'var(--bg-surface)', border: '1px solid var(--border-strong)', borderRadius: '4px', padding: '15px', display: 'flex', flexDirection: 'column', minHeight: '0' }
+    });
+
+    const layout = h('div', { style: { display: 'flex', flexDirection: 'column', height: '100%' } },
+        h('div', { style: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px solid var(--border-strong)', paddingBottom: '10px', marginBottom: '10px', flex: '0 0 auto' } },
+            h('h2', { style: { margin: '0', color: 'var(--text-primary)' }, textContent: 'Arena Manifold (Global/Local Map)' })
+        ),
+        contentContainer
+    );
     
     container.appendChild(layout);
-    const contentContainer = layout.querySelector('#arena-content') as HTMLElement;
 
     createEffect(() => {
-        const lId = selectedLevelId.value;
+        const lId = selectedLanguageId.value; // The Active Language
         if (!lId) {
             activeWhole.value = null;
             return;
         }
 
-        const path = [{ levelId: lId }];
+        const path = [{ languageId: lId }];
         const cacheKey = getArenaPathKey(path);
         
         let whole = arenaCache.get(cacheKey);
         if (!whole) {
-            whole = new Whole({
-                id: cacheKey,
-                name: `Arena: ${lId}`,
-                levelId: lId
+            // Instantiate the map with the interactive click handler attached
+            whole = new Whole({ 
+                id: cacheKey, 
+                name: `Arena: ${lId}`, 
+                languageId: lId,
+                onStanceClick: (stance) => {
+                    // THE EXPLORATION LOOP: Click -> Query -> Relocate
+                    if (!selectedViewId.value) return; // Must have an active cursor
+                    
+                    // If the engine is waiting, we send the Stance Name as the E3 recognition response.
+                    // This forces the Paradox Engine to step to this new coordinate.
+                    if (uiState.value === 'awaiting_user') {
+                        processUserReply(stance.name);
+                        pushScreen('chat'); // Jump to console to watch the query execute
+                    } else {
+                        // If engine is idle, we treat clicking a stance as a raw intent submission
+                        processUserReply(`Let us relocate to ${stance.name} (${stance.eq}).`);
+                        pushScreen('chat');
+                    }
+                }
             });
             arenaCache.set(cacheKey, whole);
         }
@@ -51,22 +68,16 @@ export function mountArenaScreen(container: HTMLElement): () => void {
 
     createEffect(() => {
         const whole = activeWhole.value;
+        if (cleanupWhole) { cleanupWhole(); cleanupWhole = null; }
         
-        if (cleanupWhole) {
-            cleanupWhole();
-            cleanupWhole = null;
-        }
-        
-        contentContainer.innerHTML = '';
+        contentContainer.replaceChildren();
         
         if (whole) {
-            // Remove padding to give the Arena grid its max bounds
             contentContainer.style.padding = '0';
             cleanupWhole = whole.mount(contentContainer);
         } else {
-            // Restore padding for the empty state
             contentContainer.style.padding = '15px';
-            contentContainer.innerHTML = '<div style="color: #888; font-style: italic;">Select a Level to initialize the Arena.</div>';
+            contentContainer.appendChild(h('div', { style: { color: '#888', fontStyle: 'italic' }, textContent: 'Select a Language to render the global map.' }));
         }
     });
 
@@ -79,6 +90,6 @@ export function mountArenaScreen(container: HTMLElement): () => void {
 screenRegistry.register({
     id: 'arena',
     label: 'Arena',
-    order: 20,
+    order: 110,
     mount: mountArenaScreen
 });

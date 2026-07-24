@@ -12,12 +12,12 @@ export function mountManifoldScreen(container: HTMLElement): () => void {
     
     layout.innerHTML = `
         <div style="display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid #ccc; padding-bottom: 10px; margin-bottom: 10px;">
-            <h2 style="margin: 0; color: #14161A;">Manifold Telemetry</h2>
+            <h2 style="margin: 0; color: var(--text-primary);">Manifold Telemetry</h2>
             <div>
                 <button id="manifold-clear-btn" style="padding: 4px 12px; margin-left: 10px;">Clear</button>
             </div>
         </div>
-        <div id="manifold-log-container" style="flex: 1; overflow-y: auto; background: #fff; border: 1px solid #DAD5CB; border-radius: 4px; padding: 10px; font-family: monospace; font-size: 0.85rem;"></div>
+        <div id="manifold-log-container" style="flex: 1; overflow-y: auto; background: var(--bg-surface); border: 1px solid var(--border-strong); border-radius: 4px; padding: 10px; font-family: monospace; font-size: 0.85rem;"></div>
     `;
     
     container.appendChild(layout);
@@ -42,7 +42,7 @@ export function mountManifoldScreen(container: HTMLElement): () => void {
         logContainer.replaceChildren(...logs.map(log => {
             const row = document.createElement('div');
             row.style.padding = '4px 0';
-            row.style.borderBottom = '1px solid #f0f0f0';
+            row.style.borderBottom = '1px solid var(--border-subtle)';
             
             const time = new Date(log.ts).toISOString().split('T')[1].slice(0, -1);
             

@@ -107,6 +107,27 @@ impl Stance {
         }
     }
 
+    /// Inverse of `facet_id`. Accepts 1..=12, returns None otherwise.
+    /// Single source of truth for numeric ↔ (home, absent) mapping.
+    pub fn from_facet_id(id: u8) -> Option<Stance> {
+        let (h, a) = match id {
+            1  => (Pole::P, Pole::R),
+            2  => (Pole::P, Pole::I),
+            3  => (Pole::P, Pole::U),
+            4  => (Pole::I, Pole::R),
+            5  => (Pole::I, Pole::P),
+            6  => (Pole::I, Pole::U),
+            7  => (Pole::U, Pole::R),
+            8  => (Pole::U, Pole::P),
+            9  => (Pole::U, Pole::I),
+            10 => (Pole::R, Pole::P),
+            11 => (Pole::R, Pole::I),
+            12 => (Pole::R, Pole::U),
+            _  => return None,
+        };
+        Stance::try_new(h, a).ok()
+    }
+
     pub fn spec_name(&self, role: SpecRole) -> &'static str {
         let (h, a) = (self.home, self.absent);
         match role {
@@ -181,6 +202,32 @@ impl SpecRole {
 pub fn parse_stance_from_name(eq_name: &str) -> Result<Stance, &'static str> {
     let eq = eq_name.trim();
 
+    // ── (0) NUMERIC SHORTHAND ─────────────────────────────────────
+    // Accepts: "1", "S1", "s1", "#1", "Stance 1", "stance-1", "Stance 12 (P, a:R)".
+    // Strips any leading "Stance"/"S"/"#" plus separators, then reads the
+    // first integer token. If it maps to 1..=12, resolve via from_facet_id.
+    {
+        let mut head = eq;
+        for prefix in ["Stance", "stance", "STANCE"] {
+            if let Some(rest) = head.strip_prefix(prefix) { head = rest; break; }
+        }
+        head = head.trim_start_matches(|c: char| c == 'S' || c == 's' || c == '#');
+        head = head.trim_start_matches(|c: char| c == '-' || c == '_' || c.is_whitespace());
+
+        let first_token: &str = head
+            .split(|c: char| c == '(' || c.is_whitespace())
+            .next()
+            .unwrap_or("");
+        if !first_token.is_empty() {
+            if let Ok(id) = first_token.parse::<u8>() {
+                if let Some(stance) = Stance::from_facet_id(id) {
+                    return Ok(stance);
+                }
+            }
+        }
+    }
+
+    // ── (1) ALIAS TABLE — full-string then bare label ─────────────
     // (label-only, full-with-equation, home, absent)
     // Every alias for the same (home, absent) is listed together.
     const ALIASES: &[(&str, &str, Pole, Pole)] = &[
@@ -241,8 +288,9 @@ pub fn parse_stance_from_name(eq_name: &str) -> Result<Stance, &'static str> {
         if eq == *label { return Stance::try_new(*home, *absent); }
     }
 
-    // --- NEW: ROBUST GEOMETRIC FALLBACK ---
-    // If the LLM improvises "Stance 1 (P, a:R)" or "5(I,a:P)", cut after '(' and parse the geometry directly.
+    // ── (2) GEOMETRIC FALLBACK — "Stance N (P, a:R)" / "N(I,a:P)" ─
+    // Cut after '(' and parse the coordinate pair directly. This is the
+    // form the Paradox harness itself uses to enumerate stances.
     if let Some(start) = eq.find('(') {
         let inner = &eq[start + 1..];
         if let Some(end) = inner.find(')') {
@@ -251,12 +299,8 @@ pub fn parse_stance_from_name(eq_name: &str) -> Result<Stance, &'static str> {
             if parts.len() == 2 {
                 let h_str = parts[0].trim();
                 let a_part = parts[1].trim();
-                
-                let a_str = if a_part.starts_with("a:") {
-                    a_part[2..].trim()
-                } else {
-                    a_part
-                };
+
+                let a_str = a_part.strip_prefix("a:").unwrap_or(a_part).trim();
 
                 let parse_pole = |s: &str| -> Option<Pole> {
                     match s {
@@ -279,5 +323,3 @@ pub fn parse_stance_from_name(eq_name: &str) -> Result<Stance, &'static str> {
 
     Err("Unknown equation")
 }
-
-

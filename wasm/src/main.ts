@@ -9,12 +9,16 @@ import { DefaultShell } from './shell/default';
 import { screenRegistry } from './screens/registry';
 
 // Dynamic screen imports
+import './screens/circuit';
+import './screens/views';
+import './screens/languages';
 import './screens/chat';
 import './screens/arena';
 import './screens/api-log';
 import './screens/ledger';
 import './screens/manifold';
 import './screens/settings';
+import './screens/world';
 
 async function init() {
     try {
@@ -34,7 +38,7 @@ async function init() {
 
         // 4. Mount the physical DOM
         document.body.style.margin = '0';
-        document.body.style.backgroundColor = '#F7F5F0';
+        // Removed hardcoded light background
         document.body.innerHTML = ''; 
         
         const appRoot = document.createElement('div');

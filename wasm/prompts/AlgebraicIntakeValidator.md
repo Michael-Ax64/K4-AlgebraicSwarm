@@ -7,7 +7,7 @@ Constraint 2: NO CONVERSATION. You gate and route.
 <Harness>
 POLES: P(Active+Asserting, Drive), U(Active+Yielding, Structure), I(Reactive+Yielding, Flow), R(Reactive+Asserting, Ground).
 SEED: Active/Reactive and Asserting/Yielding kinematics prevent cross-class swaps.
-EQUATIONS: 1.P=U*I 2.P=U²/R 3.P=I²*R 4.I=P/U 5.I=U/R 6.I=√(P/R) 7.U=P/I 8.U=I*R 9.U=√(P*R) 10.R=U/I 11.R=U²/P 12.R=P/I²
+EQUATIONS: 1.P=U²/R 2.P=I²*R 3.P=U*I 4.I=√(P/R) 5.I=P/U 6.I=U/R 7.U=P/I 8.U=I*R 9.U=√(P*R) 10.R=U/I 11.R=U²/P 12.R=P/I²
 ABSENT_VAR: The dropped pole of the 3-term equation is the plane-index. nil (off-plane).
 BRAID: Gray-code (single-bit) traversal only.
 </Harness>

@@ -13,12 +13,12 @@ export function mountApiLogScreen(container: HTMLElement): () => void {
     
     layout.innerHTML = `
         <div style="display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid #ccc; padding-bottom: 10px; margin-bottom: 10px; flex: 0 0 auto;">
-            <h2 style="margin: 0; color: #14161A;">LLM Exchange Log</h2>
+            <h2 style="margin: 0; color: var(--text-primary);">LLM Exchange Log</h2>
             <div>
                 <button id="api-clear-btn" style="padding: 4px 12px; margin-left: 10px;">Clear Log</button>
             </div>
         </div>
-        <div id="api-log-container" style="flex: 1; overflow-y: auto; background: #fff; border: 1px solid #DAD5CB; border-radius: 4px; padding: 15px; font-family: monospace; font-size: 0.85rem;"></div>
+        <div id="api-log-container" style="flex: 1; overflow-y: auto; background: var(--bg-surface); border: 1px solid var(--border-strong); border-radius: 4px; padding: 15px; font-family: monospace; font-size: 0.85rem;"></div>
     `;
     
     container.appendChild(layout);
@@ -51,7 +51,7 @@ export function mountApiLogScreen(container: HTMLElement): () => void {
             row.style.marginBottom = '15px';
             row.style.padding = '10px';
             row.style.borderRadius = '4px';
-            row.style.backgroundColor = log.direction === 'out' ? '#e8f5e9' : '#fff';
+            row.style.backgroundColor = log.direction === 'out' ? 'var(--bg-elevated)' : '#fff';
             row.style.border = '1px solid #DAD5CB';
             
             const time = new Date(log.ts).toISOString().split('T')[1].slice(0, -1);
@@ -62,7 +62,7 @@ export function mountApiLogScreen(container: HTMLElement): () => void {
                     <span><strong>${dirIcon}</strong> | Role: ${log.role.toUpperCase()} | Mode: ${log.temperature.toUpperCase()}</span>
                     <span>${time}</span>
                 </div>
-                <div style="white-space: pre-wrap; font-family: monospace; font-size: 0.85rem; color: #14161A;">${log.bodyText}</div>
+                <div style="white-space: pre-wrap; font-family: monospace; font-size: 0.85rem; color: var(--text-primary);">${log.bodyText}</div>
                 <div style="margin-top: 10px; text-align: right;">
                     <button class="copy-btn" style="padding: 4px 12px; font-size: 0.75rem; cursor:pointer; background: #14161A; color: #fff; border: none; border-radius: 3px;">Copy Text</button>
                 </div>
@@ -86,7 +86,7 @@ export function mountApiLogScreen(container: HTMLElement): () => void {
 screenRegistry.register({
     id: 'log',
     label: 'API Log',
-    order: 30,
+    order: 40,
     mount: mountApiLogScreen
 });
 

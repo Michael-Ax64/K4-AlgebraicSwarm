@@ -5,7 +5,9 @@ import {
   currentRole, currentMode, braidThreads, selectedThreadId, sandboxes, manualPrompt, apiLog,
   manifoldLog, lastQuery, Pole, SlotState, EngineHeader, SurfaceSlot, PtrSummary, HeldRole, ThreadShape
 } from './state';
-import { activeWorldConfig, getActiveVocabContext, corpusGrid } from './ledger/grid-state';
+import { activeWorldConfig, getActiveVocabContext, corpusGrid, selectedViewId, ledgerGrid } from './ledger/grid-state';
+import { vfsDb } from './ledger/fs';
+import { LedgerEntry } from './ledger/schema';
 import { loadVfs, persistVfs } from './persistence';
 import { callBuiltInAPI } from './llm-client';
 import init, { create_engine_with_state } from 'k4_manifold';
@@ -18,7 +20,6 @@ function logManifold(type: 'info'|'warn'|'error', source: 'system'|'engine'|'bri
     }];
 }
 
-// EXPORTED: Must be awaited by main.ts before UI mounts
 export async function bootAirlock() {
   try {
     await init();
@@ -37,9 +38,7 @@ export async function bootAirlock() {
 }
 
 export async function processSubmission(doc0Text: string): Promise<void> {
-  // Store raw intent for the upcoming 12-fold perspective loop
-  lastQuery.value = doc0Text; 
-  
+  lastQuery.value = doc0Text;
   chatLog.value = [...chatLog.value, { role: 'user', text: doc0Text }];
   uiState.value = 'processing';
 
@@ -58,7 +57,7 @@ export async function submitLlmPaste(llmResponseText: string): Promise<void> {
   chatLog.value = [...chatLog.value, { role: 'user', text: "(Pasted LLM Output)" }];
   uiState.value = 'processing';
   manualPrompt.value = '';
-  
+
   const context = getActiveVocabContext();
   engine.set_domain_context(context);
 
@@ -67,15 +66,23 @@ export async function submitLlmPaste(llmResponseText: string): Promise<void> {
   await runEngineLoop(command);
 }
 
-// WARM CHAT BYPASS: Bypasses corpus injection for conversational continuity
 export async function processUserReply(replyText: string): Promise<void> {
   chatLog.value = [...chatLog.value, { role: 'user', text: replyText }];
   uiState.value = 'processing';
 
-  // Direct step without step_submission wrapper
   let command = engine.step(replyText);
   syncEngineState();
   await runEngineLoop(command);
+}
+
+export function resetEngineRun(): void {
+  engine.reset_run();
+  syncEngineState();
+}
+
+export function resetEngineAll(): void {
+  engine.reset_all();
+  syncEngineState();
 }
 
 async function runEngineLoop(initialCommand: any) {
@@ -87,7 +94,7 @@ async function runEngineLoop(initialCommand: any) {
         if (!config || config.apiProvider === 'manual') {
           manualPrompt.value = command.prompt;
           uiState.value = 'awaiting_llm_paste';
-          return; 
+          return;
         }
         try {
           const outId = crypto.randomUUID();
@@ -125,13 +132,17 @@ async function runEngineLoop(initialCommand: any) {
         chatLog.value = [...chatLog.value, { role: 'system', text: `Success: ${command.message}` }];
         uiState.value = 'idle';
         return;
-      default:
+      default: {
+        const diag = `[BRIDGE] Unknown JsCommand shape: ${JSON.stringify(command)}`;
+        console.error(diag);
+        logManifold('error', 'bridge', diag);
+        chatLog.value = [...chatLog.value, { role: 'error', text: diag }];
         uiState.value = 'halted';
         return;
+      }
     }
   }
 }
-
 
 interface VfsShape {
   braid?: { active_thread_id: string | null; threads: Record<string, ThreadShape>; };
@@ -141,30 +152,31 @@ interface VfsShape {
 function syncEngineState(): void {
   currentRole.value = engine.current_role;
   currentMode.value = engine.current_mode;
-  
+
   const raw = engine.vfs_state;
   persistVfs(raw);
-  
+
   let vfs: VfsShape;
   try { vfs = JSON.parse(raw) as VfsShape; } catch (err) { return; }
 
   const safeBraid = vfs.braid || { active_thread_id: null, threads: {} };
   const safeThreads = safeBraid.threads || {};
-  
+
   sandboxes.value = vfs.sandboxes || {};
   braidThreads.value = safeThreads;
   activeThreadId.value = safeBraid.active_thread_id || null;
-  
+
   if (!selectedThreadId.value && safeBraid.active_thread_id) {
     selectedThreadId.value = safeBraid.active_thread_id;
   }
 
-  braidHistory.value = collectPtrs(vfs);
+  const ptrs = collectPtrs(vfs);
+  braidHistory.value = ptrs;
 
   const activeId = safeBraid.active_thread_id;
   const activeThread = activeId ? (safeThreads[activeId] || null) : null;
   const latest = activeThread?.ptr_latest ?? null;
-  
+
   if (latest) {
     engineHeader.value = ptrToHeader(latest);
     workingSurface.value = snapshotToSlots(latest.surface_snapshot || {});
@@ -172,6 +184,47 @@ function syncEngineState(): void {
     engineHeader.value = null;
     workingSurface.value = emptySurface();
   }
+
+  // =========================================================================
+  // THE ETL PIPELINE: Unidirectional Sync to the Relational TS Ledger
+  // =========================================================================
+  const vId = selectedViewId.peek();
+  if (vId && ptrs.length > 0) {
+      syncLedgerEntriesAsync(vId, ptrs).catch(err => {
+          console.error("[ETL] Failed to sync PTRs to Relational Ledger", err);
+      });
+  }
+}
+
+async function syncLedgerEntriesAsync(viewId: string, ptrs: PtrSummary[]) {
+    const existing = await vfsDb.getLedgerEntries(viewId);
+    const existingKeys = new Set(existing.map(e => `${e.cycle}-${e.seq}`));
+
+    let added = false;
+    for (const ptr of ptrs) {
+        const key = `${ptr.cycle}-${ptr.finalSeq}`;
+        if (!existingKeys.has(key)) {
+            const entry: LedgerEntry = {
+                id: crypto.randomUUID(),
+                viewId,
+                circuitId: 'pending_bind', // Rust PTRs do not know their local TS Circuit UUID yet
+                cycle: ptr.cycle,
+                seq: ptr.finalSeq,
+                stance: ptr.stance,
+                health: ptr.health,
+                snapshotJson: JSON.stringify(ptr.surfaceSnapshot),
+                createdAt: Date.now()
+            };
+            await vfsDb.appendLedgerEntry(entry);
+            added = true;
+        }
+    }
+
+    // If new entries hit the DB, immediately update the reactive UI grid
+    if (added) {
+        const updated = await vfsDb.getLedgerEntries(viewId);
+        ledgerGrid.value = updated.sort((a, b) => (b.cycle - a.cycle) || (b.seq - a.seq));
+    }
 }
 
 function ptrToHeader(ptr: any): EngineHeader {
@@ -181,23 +234,23 @@ function ptrToHeader(ptr: any): EngineHeader {
   };
 }
 
-function normalizeHeldRole(raw: string): HeldRole { 
-  return raw?.toLowerCase() === 'material' ? 'material' : 'nil'; 
+function normalizeHeldRole(raw: string): HeldRole {
+  return raw?.toLowerCase() === 'material' ? 'material' : 'nil';
 }
 
 function snapshotToSlots(snapshot: Record<Pole, { content: string, state: SlotState }>): SurfaceSlot[] {
-  return (['P', 'U', 'I', 'R'] as Pole[]).map(pole => ({ 
-    pole, 
-    content: snapshot[pole]?.content ?? null, 
-    state: snapshot[pole]?.state ?? 'Unwritten' 
+  return (['P', 'U', 'I', 'R'] as Pole[]).map(pole => ({
+    pole,
+    content: snapshot[pole]?.content ?? null,
+    state: snapshot[pole]?.state ?? 'Unwritten'
   }));
 }
 
 function emptySurface(): SurfaceSlot[] {
-  return (['P', 'U', 'I', 'R'] as Pole[]).map(pole => ({ 
-    pole, 
-    content: null, 
-    state: 'Unwritten' as SlotState 
+  return (['P', 'U', 'I', 'R'] as Pole[]).map(pole => ({
+    pole,
+    content: null,
+    state: 'Unwritten' as SlotState
   }));
 }
 

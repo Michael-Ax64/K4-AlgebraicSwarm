@@ -427,7 +427,8 @@ fn parse_path(path_str: &str) -> Result<Vec<Pole>, ParseError> {
     }
     if path.is_empty() {
         return Err(ParseError::MalformedHeader("Empty PATH".to_string()));
-    }
+
+}
     Ok(path)
 }
 

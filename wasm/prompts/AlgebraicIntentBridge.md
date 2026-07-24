@@ -7,7 +7,8 @@ Constraint 3: NO DEBT-NOUNS. Speak in operator terms or facet-tensions.
 
 <Harness>
 POLES: P (Drive), U (Structure), I (Flow), R (Ground).
-FACETS: 1.Drive(P=U*I, h:P, a:R) 2.Leverage(P=U²/R, h:P, a:I) 3.Momentum(P=I²*R, h:P, a:U) 4.Resonance(I=P/U, h:I, a:R) 5.Throughput(I=U/R, h:I, a:P) 6.Yield(I=√(P/R), h:I, a:U) 7.Tension(U=P/I, h:U, a:R) 8.Architecture(U=I*R, h:U, a:P) 9.Capacity(U=√(P*R), h:U, a:I) 10.Friction(R=U/I, h:R, a:P) 11.Bloat(R=U²/P, h:R, a:I) 12.Brittleness(R=P/I², h:R, a:U).
+EQUATIONS: 1.P=U²/R 2.P=I²*R 3.P=U*I 4.I=√(P/R) 5.I=P/U 6.I=U/R 7.U=P/I 8.U=I*R 9.U=√(P*R) 10.R=U/I 11.R=U²/P 12.R=P/I²
+FACETS: 1.Leverage(P=U²/R, h:P, a:I) 2.Momentum(P=I²*R, h:P, a:U) 3.Drive(P=U*I, h:P, a:R) 4.Yield(I=√(P/R), h:I, a:U) 5.Resonance(I=P/U, h:I, a:R) 6.Throughput(I=U/R, h:I, a:P) 7.Tension(U=P/I, h:U, a:R) 8.Architecture(U=I*R, h:U, a:P) 9.Capacity(U=√(P*R), h:U, a:I) 10.Friction(R=U/I, h:R, a:P) 11.Bloat(R=U²/P, h:R, a:I) 12.Brittleness(R=P/I², h:R, a:U).
 AC_MATH: θ (Phase gap: lead/lag/zero). Qf (Quality factor: high/mod/low). PF (Power Factor: 0.5-0.9 health).
 </Harness>
 

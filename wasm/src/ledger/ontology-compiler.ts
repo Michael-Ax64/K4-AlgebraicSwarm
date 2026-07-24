@@ -5,12 +5,12 @@ import { vfsDb } from './fs';
 import { callBuiltInAPI } from '../llm-client';
 
 export const STANCES_GEOMETRY = [
-  { id: 1, eq: "P = U * I", face: "P", held: "R", R: 5, L: 10, C: 0.1, w: 10 },
-  { id: 2, eq: "P = U^2 / R", face: "P", held: "I", R: 20, L: 50, C: 0.05, w: 5 },
-  { id: 3, eq: "P = I^2 * R", face: "P", held: "U", R: 50, L: 20, C: 0.2, w: 15 },
-  { id: 4, eq: "I = P / U", face: "I", held: "R", R: 10, L: 80, C: 0.01, w: 2 },
-  { id: 5, eq: "I = U / R", face: "I", held: "P", R: 30, L: 40, C: 0.05, w: 1 },
-  { id: 6, eq: "I = sqrt(P/R)", face: "I", held: "U", R: 15, L: 5, C: 0.3, w: 12 },
+  { id: 1, eq: "P = U^2 / R", face: "P", held: "I", R: 20, L: 50, C: 0.05, w: 5 },
+  { id: 2, eq: "P = I^2 * R", face: "P", held: "U", R: 50, L: 20, C: 0.2, w: 15 },
+  { id: 3, eq: "P = U * I", face: "P", held: "R", R: 5, L: 10, C: 0.1, w: 10 },
+  { id: 4, eq: "I = sqrt(P/R)", face: "I", held: "U", R: 15, L: 5, C: 0.3, w: 12 },
+  { id: 5, eq: "I = P / U", face: "I", held: "R", R: 10, L: 80, C: 0.01, w: 2 },
+  { id: 6, eq: "I = U / R", face: "I", held: "P", R: 30, L: 40, C: 0.05, w: 1 },
   { id: 7, eq: "U = P / I", face: "U", held: "R", R: 20, L: 60, C: 0.1, w: 3 },
   { id: 8, eq: "U = I * R", face: "U", held: "P", R: 80, L: 10, C: 0.05, w: 4 },
   { id: 9, eq: "U = sqrt(P*R)", face: "U", held: "I", R: 40, L: 30, C: 0.02, w: 1.5 },

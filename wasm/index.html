@@ -7,65 +7,7 @@
   <link rel="stylesheet" href="/styles.css">
 </head>
 <body>
-  <div id="app-container">
-    <header class="topbar">
-      <div id="role-badge">cold</div>
-      <div id="status-strip" data-health="cold">cold · no PTR committed yet</div>
-      <span id="thread-indicator" style="font-size:11px; color:#666; margin-right:10px;">no active thread</span>
-      <button id="reset-btn" title="Factory Reset VFS">⟲ Reset</button>
-    </header>
-
-    <aside id="ledger-sidebar">
-      <div class="sidebar-title">Worlds & Levels</div>
-    </aside>
-
-    <main id="main-workspace">
-      <div id="prompt-workspace" class="prompt-workspace" style="display: none;">
-        <h4>⚠️ MANUAL MODE: PROMPT WORKSPACE</h4>
-        <p>Copy this prompt, run it in your LLM, and paste the output into the main input box below.</p>
-        <textarea id="prompt-workspace-text" readonly></textarea>
-        <button id="copy-prompt-btn">Copy Prompt</button>
-      </div>
-
-      <section class="panel" id="chat-panel">
-        <div class="panel-header">Operator Circuit</div>
-        <div id="chat-log"></div>
-        <form id="input-form">
-          <textarea id="user-input" placeholder="Enter your intent or Document 0…"></textarea>
-          <button type="submit" id="submit-btn">Engage</button>
-        </form>
-      </section>
-
-      <div id="bottom-grid">
-        <section class="panel" id="surface-panel">
-          <div class="panel-header">Working Surface</div>
-          <div id="working-surface"></div>
-        </section>
-
-        <section class="panel" id="braid-panel">
-          <div class="panel-header">
-            Braid History
-            <div class="braid-controls">
-              <label>Thread:</label>
-              <select id="thread-select"></select>
-            </div>
-          </div>
-          <div id="braid-history"></div>
-        </section>
-
-        <section class="panel" id="sandbox-panel-container">
-          <div class="panel-header">Quarantined Sandboxes (Hold Runs)</div>
-          <div id="sandbox-panel"></div>
-        </section>
-      </div>
-    </main>
-
-    <aside id="ledger-grid-container">
-      <div id="ledger-tabs"></div>
-      <div id="ledger-grid-body"></div>
-    </aside>
-  </div>
-
+  <div id="k4-app-root"></div>
   <script type="module" src="/src/main.ts"></script>
 </body>
 </html>

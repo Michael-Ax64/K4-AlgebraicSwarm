@@ -1,12 +1,12 @@
-// wasm/ui/src/ledger/seed.ts
+// wasm/src/ledger/seed.ts
+
 import { vfsDb } from './fs';
 import { defaultSeedData } from './seed-data';
-import { World, Level, Vocabulary, CircuitState } from './schema';
 
 export async function seedDatabaseIfEmpty(): Promise<void> {
   const existingWorlds = await vfsDb.getWorlds();
 
-  if (existingWorlds.length > 0) {
+  if (existingWorlds.length > 10) {
     console.log('[Ledger] VFS already initialized. Skipping seed.');
     return;
   }
@@ -15,58 +15,69 @@ export async function seedDatabaseIfEmpty(): Promise<void> {
   const now = Date.now();
 
   for (const wData of defaultSeedData.worlds) {
-    const world: World = {
+    await vfsDb.upsertWorld({
       id: wData.id,
       name: wData.name,
       description: wData.description,
-      apiProvider: 'manual', // Default to manual so the airlock exercises the copy/paste path first
+      apiProvider: 'manual', 
       apiKey: '',
       apiBaseUrl: '',
-      persistCorpus: wData.persistCorpus ?? true, // Default to true
+      persistCorpus: true,
       createdAt: now,
       updatedAt: now,
-    };
-    await vfsDb.upsertWorld(world);
+    });
 
-    for (const lData of wData.levels) {
-      const level: Level = {
+    for (const lData of wData.languages) {
+      await vfsDb.upsertLanguage({
         id: lData.id,
-        worldId: world.id,
+        worldId: wData.id,
         name: lData.name,
-        levelIndex: lData.levelIndex,
-      };
-      await vfsDb.upsertLevel(level);
+        description: ''
+      });
 
-      // Seed Vocabularies
       for (const vData of lData.vocabularies) {
-        const vocab: Vocabulary = {
+        await vfsDb.upsertVocabulary({
           id: crypto.randomUUID(),
-          levelId: level.id,
+          languageId: lData.id,
           term: vData.term,
           k4Type: vData.k4Type as any,
           role: vData.role as any,
           description: vData.description,
-        };
-        await vfsDb.upsertVocabulary(vocab);
+        });
       }
+    }
 
-      // Seed Circuits
-      if (lData.circuits) {
-        for (const cData of lData.circuits) {
-          const circuit: CircuitState = {
-            id: cData.id,
-            levelId: level.id,
-            name: cData.name,
-            activeFace: cData.activeFace as any,
-            heldAbsentVar: cData.heldAbsentVar as any,
-            resistanceR: cData.resistanceR,
-            inductanceL: cData.inductanceL,
-            capacitanceC: cData.capacitanceC,
-            drivingOmega: cData.drivingOmega,
-            currentCycle: cData.currentCycle,
-          };
-          await vfsDb.upsertCircuitState(circuit);
-        }
+    if (wData.views) {
+      for (const vData of wData.views) {
+        await vfsDb.upsertView({
+          id: vData.id,
+          worldId: wData.id,
+          languageId: vData.languageId,
+          name: vData.name,
+          description: vData.description,
+          innateOmega: vData.innateOmega,
+          innateR: vData.innateR,
+          innateL: vData.innateL,
+          innateC: vData.innateC
+        });
+      }
+    }
+
+    if (wData.circuits) {
+      for (const cData of wData.circuits) {
+        await vfsDb.upsertCircuit({
+          id: cData.id,
+          viewId: cData.viewId,
+          name: cData.name,
+          activeFace: cData.activeFace as any,
+          heldAbsentVar: cData.heldAbsentVar as any,
+          omega: cData.omega,
+          r: cData.r,
+          l: cData.l,
+          c: cData.c,
+          diagnosticVocab: cData.diagnosticVocab || [],
+          rewardQuestion: cData.rewardQuestion || ''
+        });
       }
     }
   }
