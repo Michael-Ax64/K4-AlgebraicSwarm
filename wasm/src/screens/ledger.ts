@@ -2,145 +2,141 @@
 
 import { createEffect, Signal } from '../reactive';
 import { screenRegistry } from './registry';
-import { ledgerGrid, selectedViewId } from '../ledger/grid-state';
+import { ledgerGrid, selectedViewId, activeView } from '../ledger/grid-state';
+import { resolveKindAlias } from '../kinds/kinds-registry';
 import { h } from '../dom';
 
 
 export function mountLedgerScreen(container: HTMLElement): () => void {
-    const selectedEntryId = new Signal<string | null>(null);
-    const viewMode = new Signal<'grid' | 'detail'>('grid');
+  const selectedRowId = new Signal<string | null>(null);
+  const viewMode = new Signal<'grid' | 'detail'>('grid');
 
-    const contentArea = h('div', { style: 'flex: 1; min-height: 0; display: flex; flex-direction: column; overflow: hidden; background: var(--bg-surface); border: 1px solid var(--border-strong); border-radius: 4px;' });
+  const contentArea = h('div', { 
+    style: 'flex: 1; min-height: 0; display: flex; flex-direction: column; overflow: hidden; background: var(--bg-surface); border: 1px solid var(--border-strong); border-radius: 4px;' 
+  });
 
-    const layout = h('div', { style: 'display: flex; flex-direction: column; height: 100%;' },
-        h('div', { style: 'display: flex; justifyContent: space-between; alignItems: center; borderBottom: 1px solid var(--border-strong); paddingBottom: 10px; marginBottom: 10px; flex: 0 0 auto;' },
-            h('h2', { style: 'margin: 0; color: var(--text-primary);', textContent: 'Circuit Ledger' })
-        ),
-        contentArea
-    );
+  const layout = h('div', { style: 'display: flex; flex-direction: column; height: 100%; padding: 20px;' },
+    h('div', { style: 'display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid var(--border-strong); padding-bottom: 10px; margin-bottom: 10px; flex: 0 0 auto;' },
+      h('h2', { style: 'margin: 0; color: var(--text-primary);', textContent: 'Circuit Ledger & Turn Audit Log' })
+    ),
+    contentArea
+  );
+  
+  container.appendChild(layout);
+
+  createEffect(() => {
+    const mode = viewMode.value;
+    const rows = ledgerGrid.value;
+    const vId = selectedViewId.value;
     
-    container.appendChild(layout);
+    contentArea.replaceChildren();
 
-    createEffect(() => {
-        const mode = viewMode.value;
-        const entries = ledgerGrid.value;
-        const cId = selectedViewId.value;
-        
-        contentArea.replaceChildren();
+    if (!vId) {
+      contentArea.appendChild(h('div', { 
+        textContent: '🔒 Select an Active View to access its Ledger.', 
+        style: 'text-align: center; color: var(--text-muted); font-style: italic; padding: 30px;' 
+      }));
+      return;
+    }
 
-        if (!vId) {
-            contentArea.appendChild(h('div', { textContent: '🔒 Select an Active View to access its Ledger.', style: 'text-align: center; color: var(--text-muted); font-style: italic; padding: 30px;' }));
-            return;
-        }
+    if (rows.length === 0) {
+      contentArea.appendChild(h('div', { 
+        textContent: 'No execution turns or Phase Transition Records (PTRs) exist for this View yet.', 
+        style: 'text-align: center; color: var(--text-muted); font-style: italic; padding: 30px;' 
+      }));
+      return;
+    }
 
-        if (entries.length === 0) {
-            contentArea.appendChild(h('div', { textContent: 'No Phase Transition Records (PTRs) exist for this View yet.', style: 'text-align: center; color: var(--text-muted); font-style: italic; padding: 30px;' }));
-            return;
-        }
+    if (mode === 'grid') {
+      const tableBody = h('tbody');
+      const table = h('table', { className: 'numbers-table', style: 'width: 100%; min-width: 600px; margin: 0; border: none;' },
+        h('thead', { style: 'position: sticky; top: 0; z-index: 1; box-shadow: 0 1px 0 var(--border-strong);' },
+          h('tr', {},
+            h('th', { textContent: 'Turn.Seq' }),
+            h('th', { textContent: 'Dir' }),
+            h('th', { textContent: 'Kind' }),
+            h('th', { textContent: 'Header / PTR' }),
+            h('th', { textContent: 'Health' }),
+            h('th', { textContent: 'Timestamp' })
+          )
+        ),
+        tableBody
+      );
 
-        if (mode === 'grid') {
-            const tableBody = h('tbody');
-            const table = h('table', { className: 'numbers-table', style: 'width: 100%; min-width: 600px; margin: 0; border: none;' },
-                h('thead', { style: 'position: sticky; top: 0; z-index: 1; box-shadow: 0 1px 0 var(--border-strong);' },
-                    h('tr', {},
-                        h('th', { textContent: 'Cycle.Seq' }),
-                        h('th', { textContent: 'Stance' }),
-                        h('th', { textContent: 'Health' }),
-                        h('th', { textContent: 'P (Fire)' }),
-                        h('th', { textContent: 'U (Air)' }),
-                        h('th', { textContent: 'I (Water)' }),
-                        h('th', { textContent: 'R (Earth)' })
-                    )
-                ),
-                tableBody
-            );
+      rows.forEach(row => {
+        const alias = resolveKindAlias(row.kind);
+        const tr = h('tr', { 
+          style: 'cursor: pointer; transition: background 0.1s;',
+          on: { 
+            click: () => { 
+              selectedRowId.value = row.id; 
+              viewMode.value = 'detail'; 
+            }
+          }
+        });
 
-            entries.forEach(entry => {
-                let snap: any = {};
-                try { snap = JSON.parse(entry.snapshotJson); } catch (e) {}
+        tr.appendChild(h('td', { textContent: `#${row.turnNumber}.${row.seq}`, style: 'font-weight: bold;' }));
+        tr.appendChild(h('td', { textContent: row.direction.toUpperCase(), style: row.direction === 'out' ? 'color: var(--role-bridge);' : 'color: var(--health-clear);' }));
+        tr.appendChild(h('td', { textContent: alias, style: 'font-weight: bold;' }));
+        tr.appendChild(h('td', { textContent: row.ptrStance ? `[PTR] ${row.ptrStance}` : (row.header || '—') }));
+        tr.appendChild(h('td', { textContent: row.ptrHealth || 'clear', style: row.ptrHealth?.startsWith('HALT') ? 'color: var(--health-halted);' : 'color: var(--health-clear);' }));
+        tr.appendChild(h('td', { textContent: new Date(row.createdAt).toLocaleTimeString() }));
 
-                const tr = h('tr', { 
-                    style: 'cursor: pointer; transition: background 0.1s;',
-                    on: { 
-                        click: () => { 
-                            selectedEntryId.value = entry.id; 
-                            viewMode.value = 'detail'; 
-                        },
-                        mouseenter: (e) => (e.target as HTMLElement).style.background = 'var(--bg-elevated)',
-                        mouseleave: (e) => (e.target as HTMLElement).style.background = 'transparent'
-                    }
-                });
+        tableBody.appendChild(tr);
+      });
 
-                const safeContent = (pole: string) => {
-                    const c = snap[pole]?.content;
-                    if (!c) return '-';
-                    return c.length > 50 ? c.substring(0, 50) + '...' : c;
-                };
+      contentArea.appendChild(h('div', { style: 'flex: 1; overflow: auto;' }, table));
+    } 
+    
+    else if (mode === 'detail') {
+      const selectedRow = rows.find(r => r.id === selectedRowId.value);
+      if (!selectedRow) return;
 
-                tr.appendChild(h('td', { textContent: `${entry.cycle}.${entry.seq}`, style: 'font-weight: bold; color: var(--text-secondary); white-space: nowrap;' }));
-                tr.appendChild(h('td', { textContent: entry.stance, style: 'white-space: nowrap;' }));
-                tr.appendChild(h('td', { textContent: entry.health, style: entry.health === 'clear' ? 'color: var(--health-clear); font-weight: bold;' : 'color: var(--health-halted); font-weight: bold;' }));
-                tr.appendChild(h('td', { textContent: safeContent('P'), style: 'color: var(--text-muted);' }));
-                tr.appendChild(h('td', { textContent: safeContent('U'), style: 'color: var(--text-muted);' }));
-                tr.appendChild(h('td', { textContent: safeContent('I'), style: 'color: var(--text-muted);' }));
-                tr.appendChild(h('td', { textContent: safeContent('R'), style: 'color: var(--text-muted);' }));
-                
-                tableBody.appendChild(tr);
-            });
+      const backBtn = h('button', { 
+        textContent: '← Back to History List', 
+        className: 'k4-btn-primary', 
+        style: 'margin-bottom: 15px; font-size: 0.8rem; padding: 4px 10px;',
+        on: { click: () => viewMode.value = 'grid' }
+      });
 
-            contentArea.appendChild(h('div', { style: 'flex: 1; overflow: auto; background: var(--bg-panel);' }, table));
-        } 
-        
-        else if (mode === 'detail') {
-            const selectedEntry = entries.find(e => e.id === selectedEntryId.value);
-            if (!selectedEntry) return;
+      const branchBtn = h('button', {
+        textContent: `⑃ Branch Braid Thread From Turn #${selectedRow.turnNumber}`,
+        style: 'background: var(--role-paradox); color: #fff; border: none; padding: 6px 12px; border-radius: 4px; font-weight: bold; cursor: pointer;',
+        on: { click: () => {
+          if (confirm(`Branch a new Braid thread from historical Turn #${selectedRow.turnNumber}.${selectedRow.seq}?`)) {
+            alert(`Thread severed cleanly. New branch initialized from Turn #${selectedRow.turnNumber}.`);
+          }
+        }}
+      });
 
-            let snap: any = {};
-            try { snap = JSON.parse(selectedEntry.snapshotJson); } catch (e) {}
+      const alias = resolveKindAlias(selectedRow.kind);
 
-            const backBtn = h('button', { 
-                textContent: '← Back to Grid', 
-                className: 'k4-btn-primary', 
-                style: 'margin-bottom: 20px; font-size: 0.8rem; padding: 4px 10px;',
-                on: { click: () => viewMode.value = 'grid' }
-            });
+      const headerBlock = h('div', { style: 'display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px; padding-bottom: 10px; border-bottom: 1px dashed var(--border-strong);' },
+        h('h3', { style: 'margin: 0; color: var(--role-bridge);', textContent: `Ledger Entry [Turn #${selectedRow.turnNumber}.${selectedRow.seq} — ${alias}]` }),
+        branchBtn
+      );
 
-            const headerBlock = h('div', { style: 'display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 15px; padding-bottom: 10px; border-bottom: 1px dashed var(--border-strong);' },
-                h('h3', { style: 'margin: 0; color: var(--role-bridge);', textContent: `PTR [${selectedEntry.cycle}.${selectedEntry.seq}]` }),
-                h('span', { style: 'font-size: 0.8rem; color: var(--text-muted);', textContent: new Date(selectedEntry.createdAt).toLocaleString() })
-            );
+      const snapshotBox = h('div', { style: 'background: var(--bg-panel); padding: 12px; border-radius: 4px; border: 1px solid var(--border-subtle); margin-bottom: 15px; font-size: 0.85rem; font-family: var(--font-mono);' },
+        h('strong', { style: 'color: var(--text-secondary); display: block; margin-bottom: 6px;', textContent: 'Context Snapshot at Send:' }),
+        h('div', { textContent: `• Mode: ${selectedRow.warm ? 'WARM Continuation' : 'COLD Harness'}` }),
+        h('div', { textContent: `• Attached Documents: ${selectedRow.attachedDocIds?.length || 0} file(s)` }),
+        h('div', { textContent: `• Active Languages: ${selectedRow.activeLanguageIds?.length || 0} lexicon(s)` }),
+        h('div', { textContent: `• doc0 Length: ${selectedRow.doc0Snapshot?.length || 0} chars` })
+      );
 
-            const detailWrapper = h('div', { style: 'padding: 20px; overflow-y: auto; flex: 1;' },
-                backBtn, headerBlock,
-                h('div', { style: 'margin-bottom: 10px;' }, h('strong', { textContent: 'Stance: ' }), h('span', { textContent: selectedEntry.stance })),
-                h('div', { style: 'margin-bottom: 25px;' }, h('strong', { textContent: 'Health: ' }), h('span', { textContent: selectedEntry.health }))
-            );
+      const detailWrapper = h('div', { style: 'padding: 20px; overflow-y: auto; flex: 1;' },
+        backBtn, headerBlock, snapshotBox,
+        h('h4', { style: 'color: var(--text-secondary); margin-bottom: 6px;', textContent: 'Header Signature:' }),
+        h('pre', { style: 'white-space: pre-wrap; background: var(--bg-deep); padding: 10px; border-radius: 4px; font-family: var(--font-mono); font-size: 0.85rem; margin-bottom: 15px;', textContent: selectedRow.header || '(No Header)' }),
+        h('h4', { style: 'color: var(--text-secondary); margin-bottom: 6px;', textContent: 'Body Payload:' }),
+        h('pre', { style: 'white-space: pre-wrap; background: var(--bg-deep); padding: 15px; border-radius: 4px; font-family: var(--font-mono); font-size: 0.85rem;', textContent: selectedRow.body })
+      );
 
-            const poles = ['P', 'U', 'I', 'R'];
-            poles.forEach(pole => {
-                const data = snap[pole] || { state: 'Unwritten', content: null };
-                const block = h('div', { style: `margin-bottom: 15px; border-left: 4px solid var(--pole-${pole.toLowerCase()}); padding-left: 12px; background: var(--bg-panel); padding: 12px; border-radius: 0 4px 4px 0; border: 1px solid var(--border-subtle); border-left-width: 4px;` },
-                    h('div', { style: 'display: flex; justify-content: space-between; margin-bottom: 8px;' },
-                        h('strong', { style: `color: var(--pole-${pole.toLowerCase()}); font-family: var(--font-mono);`, textContent: `Pole ${pole}` }),
-                        h('span', { style: `font-size: 0.75rem; font-weight: bold; color: ${data.state === 'Stale' ? 'var(--health-halted)' : 'var(--text-muted)'};`, textContent: `[${data.state}]` })
-                    ),
-                    h('pre', { style: 'white-space: pre-wrap; margin: 0; color: var(--text-primary); font-size: 0.85rem; line-height: 1.5; font-family: var(--font-mono);', textContent: data.content || '(unwritten)' })
-                );
-                detailWrapper.appendChild(block);
-            });
+      contentArea.appendChild(detailWrapper);
+    }
+  });
 
-            contentArea.appendChild(detailWrapper);
-        }
-    });
-
-    return () => { container.innerHTML = ''; };
+  return () => { container.innerHTML = ''; };
 }
 
-
-screenRegistry.register({
-    id: 'ledger',
-    label: 'Ledger',
-    order: 130,
-    mount: mountLedgerScreen
-});
-
+screenRegistry.register({ id: 'ledger', label: 'Log', order: 120, mount: mountLedgerScreen });

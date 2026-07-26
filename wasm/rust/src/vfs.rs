@@ -11,6 +11,35 @@ pub enum ThreadAction {
     Sever,    // Park current thread, initialize new thread
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+#[serde(rename_all = "camelCase")]
+pub struct ManifestDoc {
+    pub id: String,
+    pub name: String,
+    pub content: String,
+    pub poles: Vec<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+#[serde(rename_all = "camelCase")]
+pub struct ManifestVocab {
+    pub term: String,
+    pub k4_type: String,
+    pub role: String,
+    pub description: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+#[serde(rename_all = "camelCase")]
+pub struct ResolvedManifest {
+    pub view_id: String,
+    pub doc0: String,
+    pub kind: String,
+    pub warm: bool,
+    pub documents: Vec<ManifestDoc>,
+    pub vocabulary: Vec<ManifestVocab>,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct SurfaceSlotSnapshot {
     pub content: String,
@@ -34,8 +63,7 @@ pub struct PhaseTransitionRecord {
     pub health: String, // "clear", "raises: k", or "HALTED: reason"
 }
 
-/// The in-memory Virtual File System. 
-/// In Wasm, this is serialized to JSON and handed to the JS host for OPFS/IndexedDB persistence.
+/// The in-memory Virtual File System.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct VirtualFileSystem {
     /// Read-only originals. Faces never read this directly; it must be distilled first.
@@ -92,13 +120,32 @@ impl VirtualFileSystem {
         }
     }
 
+    /// Hydrates internal VirtualFileSystem maps from the structured LedgerVFS manifest.
+    pub fn hydrate_from_manifest(&mut self, manifest: &ResolvedManifest) {
+        self.documentation.clear();
+        for pole in [Pole::P, Pole::U, Pole::I, Pole::R] {
+            if let Some(map) = self.distilled.get_mut(&pole) { map.clear(); }
+            if let Some(map) = self.abstracted.get_mut(&pole) { map.clear(); }
+        }
+
+        for doc in &manifest.documents {
+            for pole_str in &doc.poles {
+                match pole_str.as_str() {
+                    "A" => { self.documentation.insert(doc.name.clone(), doc.content.clone()); }
+                    "P" => { self.distilled.get_mut(&Pole::P).unwrap().insert(doc.name.clone(), doc.content.clone()); }
+                    "U" => { self.distilled.get_mut(&Pole::U).unwrap().insert(doc.name.clone(), doc.content.clone()); }
+                    "I" => { self.distilled.get_mut(&Pole::I).unwrap().insert(doc.name.clone(), doc.content.clone()); }
+                    "R" => { self.distilled.get_mut(&Pole::R).unwrap().insert(doc.name.clone(), doc.content.clone()); }
+                    _ => {}
+                }
+            }
+        }
+    }
+
     /// THE LANDAUER TAX ENFORCER.
-    /// This is the ONLY method that writes to the Braid tree. 
-    /// It collapses the WorkingSurface into a committed PhaseTransitionRecord.
     pub fn write_ptr(&mut self, header: &StateHeader, surface: &WorkingSurface, action: ThreadAction, halt_reason: Option<String>) {
-        let thread_id = format!("thread-{}", header.cycle); // Simplified ID generation
+        let thread_id = format!("thread-{}", header.cycle);
         
-        // Ensure thread exists
         if !self.braid.threads.contains_key(&thread_id) {
             self.braid.threads.insert(thread_id.clone(), ThreadHistory {
                 status: "active".to_string(),
@@ -108,7 +155,6 @@ impl VirtualFileSystem {
             self.braid.active_thread_id = Some(thread_id.clone());
         }
 
-        // If SEVER, park the old active thread and initialize the new one
         if let ThreadAction::Sever = action {
             if let Some(old_active) = &self.braid.active_thread_id {
                 if let Some(old_thread) = self.braid.threads.get_mut(old_active) {
@@ -118,7 +164,6 @@ impl VirtualFileSystem {
             self.braid.active_thread_id = Some(thread_id.clone());
         }
 
-        // Assemble the PTR with full slot states
         let mut surface_snapshot = HashMap::new();
         for (pole, slot) in &surface.slots {
             if let Some(content) = &slot.content {
@@ -152,14 +197,12 @@ impl VirtualFileSystem {
             health,
         };
 
-        // Commit to disk (in-memory representation)
         if let Some(thread) = self.braid.threads.get_mut(&thread_id) {
             thread.history.push(ptr.clone());
             thread.ptr_latest = Some(ptr);
         }
     }
 
-    /// Reads the Braid context for the Intake Validator (Gate B).
     pub fn get_braid_context(&self) -> (Option<Stance>, Vec<u8>) {
         let active_id = match &self.braid.active_thread_id {
             Some(id) => id,
@@ -174,33 +217,27 @@ impl VirtualFileSystem {
             None => return (None, (1..=12).collect()),
         };
 
-        // Parse the stance name — accepts any of the three spec vocabularies.
         match crate::algebra::parse_stance_from_name(&latest.stance) {
             Ok(stance) => {
                 let adjacencies = stance.viable_adjacencies();
                 let legal_ids: Vec<u8> = adjacencies.iter().map(|s| s.facet_id()).collect();
                 (Some(stance), legal_ids)
             }
-            Err(_) => {
-                // Latest PTR has an unparseable stance — treat as cold, don't crash.
-                (None, (1..=12).collect())
-            }
+            Err(_) => (None, (1..=12).collect())
         }
     }
 
-    /// Writes to a sandbox (Hold run). Strictly isolated from `/Project/Distilled/`.
     pub fn write_to_sandbox(&mut self, run_id: &str, filename: &str, content: &str) {
         let sandbox = self.sandboxes.entry(run_id.to_string()).or_insert_with(HashMap::new);
         sandbox.insert(filename.to_string(), content.to_string());
     }
 
-    /// Serializes the entire VFS to a JSON string for the JS host to persist to OPFS/IndexedDB.
     pub fn serialize_for_js(&self) -> String {
         serde_json::to_string(self).unwrap_or_else(|_| "{}".to_string())
     }
 
-    /// Deserializes the VFS from a JSON string provided by the JS host on initialization.
     pub fn deserialize_from_js(json_str: &str) -> Self {
         serde_json::from_str(json_str).unwrap_or_else(|_| Self::new())
     }
 }
+

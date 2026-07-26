@@ -1,3 +1,4 @@
+// wasm/rust/src/lib.rs
 use wasm_bindgen::prelude::*;
 
 pub mod algebra;
@@ -16,3 +17,10 @@ pub fn create_engine_with_state(saved_vfs_json: &str) -> K4Engine {
     }
     engine
 }
+
+#[wasm_bindgen]
+pub fn dispatchable_kinds() -> JsValue {
+    let kinds = vec!["validator", "bridge", "controller", "paradox"];
+    serde_wasm_bindgen::to_value(&kinds).unwrap()
+}
+

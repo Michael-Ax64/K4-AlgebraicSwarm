@@ -5,19 +5,26 @@ import {
   currentRole, currentMode, braidThreads, selectedThreadId, sandboxes, manualPrompt, apiLog,
   manifoldLog, lastQuery, Pole, SlotState, EngineHeader, SurfaceSlot, PtrSummary, HeldRole, ThreadShape
 } from './state';
-import { activeWorldConfig, getActiveVocabContext, corpusGrid, selectedViewId, ledgerGrid } from './ledger/grid-state';
+import {
+  activeWorldConfig, selectedViewId, activeView, ledgerGrid,
+  updateActiveViewDoc0, beginLedgerTurn, appendConsoleRow
+} from './ledger/grid-state';
 import { vfsDb } from './ledger/fs';
-import { LedgerEntry } from './ledger/schema';
+import { LedgerRow } from './ledger/schema';
+import { LedgerVFS } from './ledger/vfs-wrapper';
 import { loadVfs, persistVfs } from './persistence';
 import { callBuiltInAPI } from './llm-client';
-import init, { create_engine_with_state } from 'k4_manifold';
+import init, { create_engine_with_state, dispatchable_kinds } from 'k4_manifold';
+import { updateStanceTensionsFromJSON } from './screens/arena-state';
+import { primeDispatchableKinds, resolveKind, resolveKindAlias } from './kinds/kinds-registry';
 
 let engine: any;
 
-function logManifold(type: 'info'|'warn'|'error', source: 'system'|'engine'|'bridge'|'parser', msg: string) {
-    manifoldLog.value = [...manifoldLog.value, {
-        id: crypto.randomUUID(), ts: Date.now(), source, type, message: msg
-    }];
+function logManifold(type: 'info' | 'warn' | 'error', source: 'system' | 'engine' | 'bridge' | 'parser', msg: string) {
+  manifoldLog.value = [
+    ...manifoldLog.value,
+    { id: crypto.randomUUID(), ts: Date.now(), source, type, message: msg }
+  ];
 }
 
 export async function bootAirlock() {
@@ -25,6 +32,14 @@ export async function bootAirlock() {
     await init();
     const savedVfs = await loadVfs();
     engine = create_engine_with_state(savedVfs);
+
+    try {
+      const exported = dispatchable_kinds();
+      primeDispatchableKinds(exported);
+    } catch (e) {
+      console.warn("🟠 [Airlock] Could not fetch dispatchable_kinds from Wasm", e);
+    }
+
     console.log("🟢 [Airlock] Rust K4 Engine coupled successfully.");
     logManifold('info', 'engine', 'Rust K4 Engine coupled successfully.');
     syncEngineState();
@@ -37,31 +52,159 @@ export async function bootAirlock() {
   }
 }
 
-export async function processSubmission(doc0Text: string): Promise<void> {
-  lastQuery.value = doc0Text;
-  chatLog.value = [...chatLog.value, { role: 'user', text: doc0Text }];
+export function extractHeader(text: string): { header: string; body: string } {
+  const match = text.match(/^(\[STATE[\s\S]*?\][\s\S]*?)\n\n([\s\S]*)$/);
+  return match ? { header: match[1], body: match[2] } : { header: '', body: text };
+}
+
+export async function processSubmission(
+  arg1: string = 'chat',
+  warm: boolean = false,
+  doc0Override?: string
+): Promise<void> {
+  const vId = selectedViewId.peek();
+  if (!vId) {
+    throw new Error("Cannot submit intent: No Active View selected.");
+  }
+
+  let kindKey = 'chat';
+  let textToSubmit = doc0Override;
+
+  const kindLookup = resolveKind(arg1);
+  if (kindLookup || arg1 === 'chat' || arg1 === 'validator' || arg1 === 'bridge' || arg1 === 'controller' || arg1 === 'paradox') {
+    kindKey = arg1;
+  } else {
+    kindKey = 'chat';
+    textToSubmit = arg1;
+  }
+
+  if (textToSubmit !== undefined) {
+    if (textToSubmit.includes("[STATE]")) {
+      await submitLlmPaste(textToSubmit);
+      return;
+    }
+    await updateActiveViewDoc0(textToSubmit);
+  }
+
+  const manifest = await LedgerVFS.buildResolvedManifest(kindKey, warm);
+  if (!manifest) return;
+
+  const kindDef = resolveKind(kindKey);
+  const alias = resolveKindAlias(kindKey);
+
+  lastQuery.value = manifest.doc0;
+  chatLog.value = [...chatLog.value, { role: 'user', text: manifest.doc0 }];
   uiState.value = 'processing';
 
-  const context = getActiveVocabContext();
-  engine.set_domain_context(context);
+  // Compile full prompt payload
+  let compiledPrompt = manifest.doc0;
+  if (kindDef?.dispatch === 'template' && kindDef?.template) {
+    compiledPrompt = kindDef.template
+      .replace('{doc0}', manifest.doc0)
+      .replace('{documents}', manifest.documents.map(d => `--- ${d.name} ---\n${d.content}`).join('\n\n'))
+      .replace('{vocabulary}', manifest.vocabulary.map(v => `- ${v.term} [${v.k4Type}]`).join('\n'));
+  }
 
-  const docs = corpusGrid.value.map(d => [d.name, d.content]);
-  const corpusJson = JSON.stringify(docs);
+  // 1. Begin Ledger 'out' row capturing FULL compiled prompt payload
+  const outRow = await beginLedgerTurn({
+    viewId: vId,
+    kind: kindKey,
+    direction: 'out',
+    header: `[STATE KIND:${kindKey} ${warm ? 'WARM' : 'COLD'}]`,
+    body: compiledPrompt, // <--- Full compiled prompt
+    snapshot: manifest.snapshot,
+  });
 
-  let command = engine.step_submission(doc0Text, corpusJson);
-  syncEngineState();
-  await runEngineLoop(command);
+  if (kindDef?.dispatch === 'engine') {
+    engine.set_domain_context(manifest.vocabulary.map(v => `${v.term} (${v.k4Type})`).join(', '));
+    const command = engine.step_submission(manifest.doc0, JSON.stringify(manifest), kindKey, warm);
+    syncEngineState();
+    await runEngineLoop(command, outRow?.id, kindKey);
+  } else {
+    const config = activeWorldConfig.value;
+    
+    // Check Manual Mode vs Automated API Call for template kinds
+    if (!config || config.apiProvider === 'manual') {
+      manualPrompt.value = compiledPrompt;
+      uiState.value = 'awaiting_llm_paste';
+      return;
+    }
+
+    try {
+      const responseText = await callBuiltInAPI(config, compiledPrompt, false);
+      const { header, body } = extractHeader(responseText);
+
+      await beginLedgerTurn({
+        viewId: vId,
+        kind: kindKey,
+        direction: 'in',
+        header: header || `[STATE KIND:${kindKey} RESPONSE]`,
+        body: body || responseText,
+        snapshot: manifest.snapshot,
+        parentTurnId: outRow?.id,
+      });
+
+      await appendConsoleRow({
+        viewId: vId,
+        severity: 'notice',
+        category: kindKey,
+        message: `Turn completed — response received for [Kind: ${alias}]`,
+      });
+
+      chatLog.value = [...chatLog.value, { role: 'system', text: responseText }];
+      uiState.value = 'idle';
+    } catch (err) {
+      logManifold('error', 'bridge', `API Call Failed: ${err}`);
+      throw new Error(`API failed: ${err}`);
+    }
+  }
+}
+
+function sanitizeLlmOutput(rawText: string): string {
+  let cleaned = rawText.replace(/#\s*COLD\s*START\s*MAP\s*json?/gi, '# HELD PARADOXES\n```json');
+  cleaned = cleaned.replace(/#\s*COLD\s*START\s*MAP/gi, '# HELD PARADOXES');
+  return cleaned;
 }
 
 export async function submitLlmPaste(llmResponseText: string): Promise<void> {
+  const sanitized = sanitizeLlmOutput(llmResponseText);
+  const vId = selectedViewId.peek();
+
+  if (sanitized.includes('"stances"')) {
+    updateStanceTensionsFromJSON(sanitized);
+  }
+
   chatLog.value = [...chatLog.value, { role: 'user', text: "(Pasted LLM Output)" }];
   uiState.value = 'processing';
   manualPrompt.value = '';
 
-  const context = getActiveVocabContext();
-  engine.set_domain_context(context);
+  const { header, body } = extractHeader(sanitized);
 
-  let command = engine.step(llmResponseText);
+  if (vId) {
+    const activeV = activeView.peek();
+    await beginLedgerTurn({
+      viewId: vId,
+      kind: 'chat',
+      direction: 'in',
+      header: header || '[STATE PASTED_RESPONSE]',
+      body: body || sanitized,
+      snapshot: {
+        doc0Snapshot: activeV?.doc0 || '',
+        attachedDocIds: [],
+        activeLanguageIds: [],
+        warm: true,
+      },
+    });
+
+    await appendConsoleRow({
+      viewId: vId,
+      severity: 'notice',
+      category: 'chat',
+      message: 'Row complete — response received via paste',
+    });
+  }
+
+  let command = engine.step(sanitized);
   syncEngineState();
   await runEngineLoop(command);
 }
@@ -69,6 +212,24 @@ export async function submitLlmPaste(llmResponseText: string): Promise<void> {
 export async function processUserReply(replyText: string): Promise<void> {
   chatLog.value = [...chatLog.value, { role: 'user', text: replyText }];
   uiState.value = 'processing';
+
+  const vId = selectedViewId.peek();
+  if (vId) {
+    const activeV = activeView.peek();
+    await beginLedgerTurn({
+      viewId: vId,
+      kind: 'chat',
+      direction: 'out',
+      header: '[STATE USER_REPLY]',
+      body: replyText,
+      snapshot: {
+        doc0Snapshot: activeV?.doc0 || '',
+        attachedDocIds: [],
+        activeLanguageIds: [],
+        warm: true,
+      },
+    });
+  }
 
   let command = engine.step(replyText);
   syncEngineState();
@@ -85,8 +246,10 @@ export function resetEngineAll(): void {
   syncEngineState();
 }
 
-async function runEngineLoop(initialCommand: any) {
+async function runEngineLoop(initialCommand: any, parentTurnId?: string, kindKey: string = 'chat') {
   let command = initialCommand;
+  const vId = selectedViewId.peek();
+
   while (command) {
     switch (command.type) {
       case 'FetchLLM': {
@@ -110,6 +273,26 @@ async function runEngineLoop(initialCommand: any) {
             temperature: currentMode.value === 'cold' ? 'cold' : 'warm', bodyText: llmResponse, linkedExchangeId: outId
           }];
 
+          if (vId) {
+            const { header, body } = extractHeader(llmResponse);
+            await beginLedgerTurn({
+              viewId: vId,
+              kind: kindKey,
+              direction: 'in',
+              header,
+              body,
+              snapshot: { doc0Snapshot: '', attachedDocIds: [], activeLanguageIds: [], warm: false },
+              parentTurnId,
+            });
+
+            await appendConsoleRow({
+              viewId: vId,
+              severity: 'notice',
+              category: kindKey,
+              message: `Turn completed — response received for [Kind: ${kindKey}]`,
+            });
+          }
+
           command = engine.step(llmResponse);
           syncEngineState();
         } catch (err) {
@@ -117,11 +300,15 @@ async function runEngineLoop(initialCommand: any) {
           throw new Error(`API failed: ${err}`);
         }
         break;
-      };
-      case 'AwaitUser':
+      }
+      case 'AwaitUser': {
         chatLog.value = [...chatLog.value, { role: 'system', text: command.text }];
+        if (command.text.includes('"stances"')) {
+          updateStanceTensionsFromJSON(command.text);
+        }
         uiState.value = 'awaiting_user';
         return;
+      }
       case 'Halt':
         logManifold('warn', 'engine', `HALT: ${command.reason}`);
         chatLog.value = [...chatLog.value, { role: 'error', text: `HALT: ${command.reason}` }];
@@ -185,46 +372,52 @@ function syncEngineState(): void {
     workingSurface.value = emptySurface();
   }
 
-  // =========================================================================
-  // THE ETL PIPELINE: Unidirectional Sync to the Relational TS Ledger
-  // =========================================================================
   const vId = selectedViewId.peek();
   if (vId && ptrs.length > 0) {
-      syncLedgerEntriesAsync(vId, ptrs).catch(err => {
-          console.error("[ETL] Failed to sync PTRs to Relational Ledger", err);
-      });
+    syncLedgerRowsAsync(vId, ptrs).catch(err => {
+      console.error("[ETL] Failed to sync PTRs to LedgerRow store", err);
+    });
   }
 }
 
-async function syncLedgerEntriesAsync(viewId: string, ptrs: PtrSummary[]) {
-    const existing = await vfsDb.getLedgerEntries(viewId);
-    const existingKeys = new Set(existing.map(e => `${e.cycle}-${e.seq}`));
+async function syncLedgerRowsAsync(viewId: string, ptrs: PtrSummary[]) {
+  const existing = await vfsDb.getLedgerRows(viewId);
+  const existingKeys = new Set(existing.map(e => `${e.ptrCycle}-${e.ptrSeq}`));
 
-    let added = false;
-    for (const ptr of ptrs) {
-        const key = `${ptr.cycle}-${ptr.finalSeq}`;
-        if (!existingKeys.has(key)) {
-            const entry: LedgerEntry = {
-                id: crypto.randomUUID(),
-                viewId,
-                circuitId: 'pending_bind', // Rust PTRs do not know their local TS Circuit UUID yet
-                cycle: ptr.cycle,
-                seq: ptr.finalSeq,
-                stance: ptr.stance,
-                health: ptr.health,
-                snapshotJson: JSON.stringify(ptr.surfaceSnapshot),
-                createdAt: Date.now()
-            };
-            await vfsDb.appendLedgerEntry(entry);
-            added = true;
-        }
+  let added = false;
+  for (const ptr of ptrs) {
+    const key = `${ptr.cycle}-${ptr.finalSeq}`;
+    if (!existingKeys.has(key)) {
+      const row: LedgerRow = {
+        id: `led-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`,
+        viewId,
+        turnNumber: ptr.cycle,
+        seq: ptr.finalSeq,
+        kind: 'controller',
+        direction: 'in',
+        header: `[STATE] CYCLE: ${ptr.cycle} | SEQ: ${ptr.finalSeq} | STANCE: ${ptr.stance}`,
+        body: JSON.stringify(ptr),
+        kept: true,
+        doc0Snapshot: '',
+        attachedDocIds: [],
+        activeLanguageIds: [],
+        warm: false,
+        ptrCycle: ptr.cycle,
+        ptrSeq: ptr.finalSeq,
+        ptrStance: ptr.stance,
+        ptrHealth: ptr.health,
+        ptrSnapshotJson: JSON.stringify(ptr.surfaceSnapshot),
+        createdAt: Date.now(),
+        updatedAt: Date.now(),
+      };
+      await vfsDb.upsertLedgerRow(row);
+      added = true;
     }
+  }
 
-    // If new entries hit the DB, immediately update the reactive UI grid
-    if (added) {
-        const updated = await vfsDb.getLedgerEntries(viewId);
-        ledgerGrid.value = updated.sort((a, b) => (b.cycle - a.cycle) || (b.seq - a.seq));
-    }
+  if (added) {
+    ledgerGrid.value = await vfsDb.getLedgerRows(viewId);
+  }
 }
 
 function ptrToHeader(ptr: any): EngineHeader {
@@ -270,3 +463,4 @@ function collectPtrs(vfs: VfsShape): PtrSummary[] {
   }
   return out.sort((a, b) => a.cycle - b.cycle || a.finalSeq - b.finalSeq);
 }
+

@@ -5,7 +5,7 @@ import { Quarter, RenderMode, termFor } from './quarter';
 import { Face, StanceRegistry, Stance } from './registry';
 import { LAYOUTS, LayoutName, DEFAULT_LAYOUT, Layout } from './layout';
 import type { Vocabulary } from '../ledger/schema';
-import { vocabGrid, selectedLanguageId, languagesGrid } from '../ledger/grid-state';
+import { vocabGrid, selectedLanguageId, worldLanguagesGrid } from '../ledger/grid-state';
 import { h } from '../dom';
 
 export type ViewMode = 'spatial' | 'typographic' | 'data-grid';
@@ -48,6 +48,17 @@ export function translateEquation(eq: string, vocab: readonly Vocabulary[]): str
         .replace(/\bI\b/g, i)
         .replace(/\bR\b/g, r);
 }
+
+
+export interface StanceOverlay {
+  instance?: string;
+  concern?: string;
+  tension?: string;
+  example?: string;
+  highlight?: boolean;
+}
+
+
 
 export class Whole {
   readonly id:   string;
@@ -121,35 +132,35 @@ export class Whole {
       const curLang   = selectedLanguageId.value;
 
       if (vMode === 'spatial') {
-          const layoutSel = h('select', { className: 'perspective-select' });
-          for (const name of Object.keys(LAYOUTS) as LayoutName[]) {
-            layoutSel.appendChild(h('option', { value: name, textContent: name, selected: name === curLayout }));
-          }
-          layoutSel.addEventListener('change', () => { this.layoutName.value = layoutSel.value as LayoutName; });
-          perspective.append(h('span', { className: 'perspective-label', textContent: 'layout' }), layoutSel);
+        const layoutSel = h('select', { className: 'perspective-select' });
+        for (const name of Object.keys(LAYOUTS) as LayoutName[]) {
+          layoutSel.appendChild(h('option', { value: name, textContent: name, selected: name === curLayout }));
+        }
+        layoutSel.addEventListener('change', () => { this.layoutName.value = layoutSel.value as LayoutName; });
+        perspective.append(h('span', { className: 'perspective-label', textContent: 'layout' }), layoutSel);
       } else {
-          const sortSel = h('select', { className: 'perspective-select' });
-          for (const name of ['canonical', 'face-grouped', 'tension', 'braid'] as SortTopology[]) {
-            sortSel.appendChild(h('option', { value: name, textContent: name, selected: name === curSort }));
-          }
-          sortSel.addEventListener('change', () => { this.sortTopology.value = sortSel.value as SortTopology; });
-          perspective.append(h('span', { className: 'perspective-label', textContent: 'order by' }), sortSel);
+        const sortSel = h('select', { className: 'perspective-select' });
+        for (const name of ['canonical', 'face-grouped', 'tension', 'braid'] as SortTopology[]) {
+          sortSel.appendChild(h('option', { value: name, textContent: name, selected: name === curSort }));
+        }
+        sortSel.addEventListener('change', () => { this.sortTopology.value = sortSel.value as SortTopology; });
+        perspective.append(h('span', { className: 'perspective-label', textContent: 'order by' }), sortSel);
       }
 
       if (vMode === 'typographic') {
-          const colsSel = h('select', { className: 'perspective-select' });
-          [1, 2, 3, 4, 6].forEach(c => colsSel.appendChild(h('option', { value: c.toString(), textContent: `${c} Cols`, selected: c === this.typoCols.value })));
-          colsSel.addEventListener('change', () => this.typoCols.value = parseInt(colsSel.value));
+        const colsSel = h('select', { className: 'perspective-select' });
+        [1, 2, 3, 4, 6].forEach(c => colsSel.appendChild(h('option', { value: c.toString(), textContent: `${c} Cols`, selected: c === this.typoCols.value })));
+        colsSel.addEventListener('change', () => this.typoCols.value = parseInt(colsSel.value));
 
-          const flowSel = h('select', { className: 'perspective-select' });
-          ['row', 'column'].forEach(f => flowSel.appendChild(h('option', { value: f, textContent: f, selected: f === this.typoFlow.value })));
-          flowSel.addEventListener('change', () => this.typoFlow.value = flowSel.value as 'row'|'column');
+        const flowSel = h('select', { className: 'perspective-select' });
+        ['row', 'column'].forEach(f => flowSel.appendChild(h('option', { value: f, textContent: f, selected: f === this.typoFlow.value })));
+        flowSel.addEventListener('change', () => this.typoFlow.value = flowSel.value as 'row'|'column');
 
-          perspective.append(h('span', { className: 'perspective-label', textContent: 'grid' }), colsSel, flowSel);
+        perspective.append(h('span', { className: 'perspective-label', textContent: 'grid' }), colsSel, flowSel);
       }
 
       const langSel = h('select', { className: 'perspective-select' });
-      for (const lv of languagesGrid.value) {
+      for (const lv of worldLanguagesGrid.value) {
         langSel.appendChild(h('option', { value: lv.id, textContent: lv.name, selected: lv.id === curLang }));
       }
       langSel.addEventListener('change', () => { selectedLanguageId.value = langSel.value; });
@@ -230,64 +241,70 @@ export class Whole {
       const flow = this.typoFlow.value;
       
       const getGridStyle = (itemCount: number) => {
-          if (flow === 'row') {
-              return `display: grid; grid-template-columns: repeat(${cols}, 1fr); grid-auto-flow: row; gap: 12px;`;
-          } else {
-              const rows = Math.ceil(itemCount / cols);
-              return `display: grid; grid-template-columns: repeat(${cols}, 1fr); grid-template-rows: repeat(${rows}, auto); grid-auto-flow: column; gap: 12px;`;
-          }
+        if (flow === 'row') {
+          return `display: grid; grid-template-columns: repeat(${cols}, 1fr); grid-auto-flow: row; gap: 12px;`;
+        } else {
+          const rows = Math.ceil(itemCount / cols);
+          return `display: grid; grid-template-columns: repeat(${cols}, 1fr); grid-template-rows: repeat(${rows}, auto); grid-auto-flow: column; gap: 12px;`;
+        }
       };
 
       const renderCard = (s: Stance) => {
-          const over = overlays[s.id as number] || {};
-          const translatedEq = translateEquation(s.eq, vocab);
-          const card = h('div', { className: `paradox-card ${over.highlight ? 'highlight' : ''}` });
-          
-          card.innerHTML = `
-              <div class="paradox-name"><span style="color:var(--text-muted);font-size:0.8em">#${String(s.id).padStart(2, '0')}</span> ${s.name}</div>
-              
-              <!-- LINE 1: Normal Raw Formula -->
-              <div style="font-family:var(--font-mono); color:var(--text-primary); font-size:0.9rem; font-weight:bold; margin-top:6px; margin-bottom:3px;">
-                  ${s.eq}
-              </div>
+        const over = overlays[s.id as number] || {};
+        const translatedEq = translateEquation(s.eq, vocab);
+        const card = h('div', { className: `paradox-card ${over.highlight ? 'highlight' : ''}` });
+  
+        card.innerHTML = `
+      <div class="paradox-name">
+        <span style="color:var(--text-muted);font-size:0.8em">#${String(s.id).padStart(2, '0')}</span> 
+        ${s.name} ${over.instance ? `— <span style="color:var(--role-bridge);">${over.instance}</span>` : ''}
+      </div>
+      
+      <!-- Raw Formula & Translated Equation -->
+      <div style="font-family:var(--font-mono); color:var(--text-primary); font-size:0.85rem; font-weight:bold; margin-top:4px;">
+          ${s.eq} <span style="color:var(--text-muted); font-weight:normal;">(${translatedEq})</span>
+      </div>
 
-              <!-- LINE 2: Simple Domain Translation in Words -->
-              <div style="font-family:var(--font-sans); color:var(--role-bridge); font-size:0.85rem; font-weight:600; margin-bottom:8px;">
-                  ${translatedEq}
-              </div>
+      <!-- Metadata -->
+      <div class="paradox-meta" style="border-top:1px dashed var(--border-subtle); padding-top:4px; margin-top:6px; font-size:0.75rem; color:var(--text-muted);">
+          Home: <strong style="color:var(--text-secondary)">${termFor(vocab, s.face, s.face)}</strong> | 
+          Absent: <strong style="color:var(--text-secondary)">${termFor(vocab, s.held, s.held)}</strong>
+      </div>
 
-              <!-- LINE 3: Fuller Details & Metadata -->
-              <div class="paradox-meta" style="border-top:1px dashed var(--border-subtle); padding-top:6px; font-size:0.75rem; color:var(--text-muted);">
-                  Home: <strong style="color:var(--text-secondary)">${termFor(vocab, s.face, s.face)}</strong><br/>
-                  Absent: <strong style="color:var(--text-secondary)">${termFor(vocab, s.held, s.held)}</strong>
-              </div>
+      <!-- Concern (U) -->
+      ${over.concern ? `<div style="margin-top:6px; font-size:0.8rem; color:var(--health-raises); font-weight:600;">🎯 Concern: ${over.concern}</div>` : ''}
 
-              ${over.tension ? `<div class="paradox-tension" style="margin-top:8px;">${over.tension}</div>` : ''}
-          `;
-          
-          if (this.onStanceClick) {
-              card.style.cursor = 'pointer';
-              card.addEventListener('click', () => this.onStanceClick!(s));
-          }
-          return card;
+      <!-- Tension (I) -->
+      ${over.tension ? `<div style="margin-top:6px; font-size:0.85rem; color:var(--text-primary); line-height:1.4;">${over.tension}</div>` : ''}
+
+      <!-- Example (R) -->
+      ${over.example ? `<div style="margin-top:6px; font-size:0.8rem; font-style:italic; color:var(--text-secondary); border-left:2px solid var(--role-bridge); padding-left:8px; line-height:1.3;">💡 ${over.example}</div>` : ''}
+  `;
+  
+        if (this.onStanceClick) {
+          card.style.cursor = 'pointer';
+          card.addEventListener('click', () => this.onStanceClick!(s));
+        }
+        return card;
       };
+
 
       const wrapper = h('div', { className: 'paradox-grid' });
       
       if (this.sortTopology.value === 'face-grouped') {
-          for (const face of ['P', 'U', 'I', 'R'] as Face[]) {
-              const faceStances = Array.from(StanceRegistry.values()).filter(s => s.face === face).sort((a,b) => a.id - b.id);
-              if (faceStances.length === 0) continue;
-              wrapper.appendChild(h('div', { className: 'paradox-face-header', textContent: `FACE: ${termFor(vocab, face, face)} (${face})` }));
-              const row = h('div', { style: getGridStyle(faceStances.length) });
-              for (const s of faceStances) row.appendChild(renderCard(s));
-              wrapper.appendChild(row);
-          }
-      } else {
-          const sorted = this.getSortedStances();
-          const row = h('div', { style: getGridStyle(sorted.length) });
-          for (const s of sorted) row.appendChild(renderCard(s));
+        for (const face of ['P', 'U', 'I', 'R'] as Face[]) {
+          const faceStances = Array.from(StanceRegistry.values()).filter(s => s.face === face).sort((a,b) => a.id - b.id);
+          if (faceStances.length === 0) continue;
+          wrapper.appendChild(h('div', { className: 'paradox-face-header', textContent: `FACE: ${termFor(vocab, face, face)} (${face})` }));
+          const row = h('div', { style: getGridStyle(faceStances.length) });
+          for (const s of faceStances) row.appendChild(renderCard(s));
           wrapper.appendChild(row);
+        }
+      } else {
+        const sorted = this.getSortedStances();
+        const row = h('div', { style: getGridStyle(sorted.length) });
+        for (const s of sorted) row.appendChild(renderCard(s));
+        wrapper.appendChild(row);
       }
       
       body.appendChild(wrapper);
@@ -333,28 +350,29 @@ export class Whole {
   }
 
   private getSortedStances(): Stance[] {
-      const stances = Array.from(StanceRegistry.values());
-      const sort = this.sortTopology.value;
+    const stances = Array.from(StanceRegistry.values());
+    const sort = this.sortTopology.value;
       
-      if (sort === 'canonical') {
-          stances.sort((a,b) => a.id - b.id);
-      } else if (sort === 'face-grouped') {
-          const order: Record<string, number> = { 'P': 1, 'U': 2, 'I': 3, 'R': 4 };
-          stances.sort((a,b) => order[a.face] - order[b.face] || a.id - b.id);
-      } else if (sort === 'tension') {
-          stances.sort((a,b) => b.geometry.w - a.geometry.w);
-      } else if (sort === 'braid') {
-          const s1 = StanceRegistry.get(1)!;
-          const isAdjacent = (s: Stance) => (s.face === s1.face && s.held !== s1.held) || (s.held === s1.held && s.face !== s1.face);
-          stances.sort((a,b) => {
-              const aAdj = a.id === s1.id ? -1 : (isAdjacent(a) ? 0 : 1);
-              const bAdj = b.id === s1.id ? -1 : (isAdjacent(b) ? 0 : 1);
-              return aAdj - bAdj || a.id - b.id;
-          });
-      }
-      return stances;
+    if (sort === 'canonical') {
+      stances.sort((a,b) => a.id - b.id);
+    } else if (sort === 'face-grouped') {
+      const order: Record<string, number> = { 'P': 1, 'U': 2, 'I': 3, 'R': 4 };
+      stances.sort((a,b) => order[a.face] - order[b.face] || a.id - b.id);
+    } else if (sort === 'tension') {
+      stances.sort((a,b) => b.geometry.w - a.geometry.w);
+    } else if (sort === 'braid') {
+      const s1 = StanceRegistry.get(1)!;
+      const isAdjacent = (s: Stance) => (s.face === s1.face && s.held !== s1.held) || (s.held === s1.held && s.face !== s1.face);
+      stances.sort((a,b) => {
+        const aAdj = a.id === s1.id ? -1 : (isAdjacent(a) ? 0 : 1);
+        const bAdj = b.id === s1.id ? -1 : (isAdjacent(b) ? 0 : 1);
+        return aAdj - bAdj || a.id - b.id;
+      });
+    }
+    return stances;
   }
 }
+
 
 import { surroundingCellsFor as surroundingCells } from './layout';
 export { surroundingCells };

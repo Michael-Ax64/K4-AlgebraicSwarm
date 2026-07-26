@@ -6,17 +6,13 @@ use serde_wasm_bindgen::to_value;
 
 use crate::algebra::{Pole, SpecRole};
 use crate::state::{ControllerHeader, HeldRole, WorkingSurface, RunStatus};
-use crate::vfs::{VirtualFileSystem, ThreadAction};
+use crate::vfs::{VirtualFileSystem, ThreadAction, ResolvedManifest};
 use crate::parser::{K4Parser, ParsedTurn, ParsedHeader, HeaderKind, TerminalArtifact};
 
-// ─── BINDING THE MASTER SPECS INTO THE BINARY ──────────────────
-// This enforces the Cold-Start Rule. Blank LLM instances will now
-// receive the full algebraic harness, rules, and Lexicons inline.
 const PROMPT_VALIDATOR: &str = include_str!("../../prompts/AlgebraicIntakeValidator.md");
 const PROMPT_BRIDGE: &str = include_str!("../../prompts/AlgebraicIntentBridge.md");
 const PROMPT_CONTROLLER: &str = include_str!("../../prompts/AlgebraicSwarmController.md");
 const PROMPT_PARADOX: &str = include_str!("../../prompts/AlgebraicParadoxEngine.md");
-// ───────────────────────────────────────────────────────────────
 
 #[derive(Debug, Serialize, Deserialize)]
 #[serde(tag = "type")]
@@ -142,24 +138,26 @@ impl K4Engine {
     }
 
     #[wasm_bindgen]
-    pub fn step_submission(&mut self, doc0: &str, corpus_json: &str) -> JsValue {
-        // The doc0 string is now PURE user intent, free of TS context hacks
-        let mut unified_input = format!("Document 0 (Prompt):\n{}\n\n", doc0);
+    pub fn step_submission(&mut self, doc0: &str, manifest_json: &str, kind: &str, warm: bool) -> JsValue {
+        self.mode = if warm { StepMode::ExpectUser } else { StepMode::ColdStart };
 
-        if let Ok(docs) = serde_json::from_str::<Vec<(String, String)>>(corpus_json) {
-            for (i, (name, content)) in docs.iter().enumerate() {
-                unified_input.push_str(&format!("Document {} ({}):\n{}\n\n", i + 1, name, content));
-            }
+        self.last_role = match kind {
+            "validator"  => PromptRole::Validator,
+            "bridge"     => PromptRole::Bridge,
+            "controller" => PromptRole::Controller,
+            "paradox"    => PromptRole::Paradox,
+            _            => PromptRole::Validator,
+        };
+
+        if let Ok(manifest) = serde_json::from_str::<ResolvedManifest>(manifest_json) {
+            self.vfs.hydrate_from_manifest(&manifest);
         }
 
+        let unified_input = format!("Document 0 (Prompt Draft):\n{}\n", doc0);
         let cmd = self.step_command(&unified_input);
         self.to_js(cmd)
     }
 
-    /// Soft reset: return to ColdStart and clear transient turn state.
-    /// KEEPS the VFS — braid history, sandboxes, and PTR log survive.
-    /// Use to end one run cleanly and start a fresh anchor without losing
-    /// what you've built.
     #[wasm_bindgen]
     pub fn reset_run(&mut self) {
         self.mode = StepMode::ColdStart;
@@ -167,12 +165,8 @@ impl K4Engine {
         self.last_bwr = None;
         self.last_bridge_state = None;
         self.last_role = PromptRole::Validator;
-        // domain_context preserved — it's a UI-set filter, not run state.
-        // vfs preserved — braid is durable.
     }
 
-    /// Hard reset: also wipes the VFS. Braid + sandboxes gone.
-    /// Use when clearing persistent storage.
     #[wasm_bindgen]
     pub fn reset_all(&mut self) {
         self.reset_run();
@@ -183,6 +177,19 @@ impl K4Engine {
 
 impl K4Engine {
     pub fn step_command(&mut self, input: &str) -> JsCommand {
+        if input.contains("[STATE]") {
+            self.mode = StepMode::ExpectLlm;
+            let parsed = match self.parser.parse(input) {
+                Ok(p) => p,
+                Err(e) => {
+                    return JsCommand::Halt {
+                        reason: format!("Structural Shear: {:?}", e),
+                    };
+                }
+            };
+            return self.evaluate_artifact(parsed);
+        }
+
         match self.mode {
             StepMode::ColdStart => {
                 self.mode = StepMode::ExpectLlm;
@@ -192,9 +199,6 @@ impl K4Engine {
             StepMode::ExpectUser => {
                 self.mode = StepMode::ExpectLlm;
                 let role = self.last_role;
-
-                // P-ROOM Recursion handler goes here. For now, simply routing the
-                // user's response back to the active role's prompt.
                 let prompt = self.compile_role_prompt(role, input);
                 JsCommand::FetchLLM { prompt }
             }
@@ -251,7 +255,6 @@ impl K4Engine {
                 JsCommand::AwaitUser { text }
             }
 
-            // Diverging lens intercept
             TerminalArtifact::HeldParadoxes(text) => {
                 self.last_role = PromptRole::Paradox;
                 self.mode = StepMode::ExpectUser;
@@ -269,8 +272,7 @@ impl K4Engine {
                 match parsed.header.as_controller() {
                     Some(c) => self.handle_raise(target, reason, &c.clone()),
                     None => JsCommand::Halt {
-                        reason: format!("[RAISE] artifact from non-Controller header ({:?}); ignored",
-                                        header_kind),
+                        reason: format!("[RAISE] artifact from non-Controller header ({:?}); ignored", header_kind),
                     },
                 }
             }
@@ -279,15 +281,11 @@ impl K4Engine {
                 match parsed.header.as_controller() {
                     Some(c) => self.handle_face_work(c.clone(), content),
                     None => JsCommand::Halt {
-                        reason: format!("FACE-RUNNER PROMPT from non-Controller header ({:?})",
-                                        header_kind),
+                        reason: format!("FACE-RUNNER PROMPT from non-Controller header ({:?})", header_kind),
                     },
                 }
             }
 
-            // ALTERED: emit the actual map content, drop back to ColdStart so
-            // the next operator submission is a fresh anchor, not a Paradox
-            // continuation waiting for input that will never mean the right thing.
             TerminalArtifact::PossibilityMap(content) => {
                 self.mode = StepMode::ColdStart;
                 self.current_state = None;
@@ -299,8 +297,6 @@ impl K4Engine {
                 JsCommand::FetchLLM { prompt: next_prompt }
             }
 
-            // ALTERED: after committing the PTR, return to ColdStart so the next
-            // intent is a fresh cold start rather than a parser shear.
             TerminalArtifact::PhaseTransitionRecord(payload) => {
                 match parsed.header.as_controller() {
                     Some(c) => {
@@ -351,8 +347,6 @@ impl K4Engine {
 
         self.current_state = Some(current_state.clone());
 
-        // ALTERED: on cycle-complete, commit PTR and drop back to ColdStart so
-        // the next operator turn is a fresh intent, not a parser shear.
         if self.is_cycle_complete(&current_state) {
             self.vfs.write_ptr(&current_state, &self.surface, ThreadAction::Continue, None);
             self.mode = StepMode::ColdStart;
@@ -367,16 +361,13 @@ impl K4Engine {
 
     fn compile_validator_prompt(&self, user_input: &str) -> String {
         let ctx = if self.domain_context.is_empty() { String::new() } else { format!("\n\n[CONTEXTUAL DICTIONARY]\n{}", self.domain_context) };
-        // Placed ABOVE # SUBMISSION so it acts as rules, not operator text
         format!("{}{}\n\n# SUBMISSION\n{}", PROMPT_VALIDATOR, ctx, user_input)
     }
 
     fn compile_bridge_prompt(&self, payload: &str) -> String {
-        // Computing the Gray-code adjacencies from the Braid
         let (last_stance, legal_facets) = self.vfs.get_braid_context();
         let stance_str = last_stance.map_or("NONE".to_string(), |s| s.equation_name().to_string());
         let facets_str = if legal_facets.len() == 12 { "ALL".to_string() } else { format!("{:?}", legal_facets) };
-
         let ctx = if self.domain_context.is_empty() { String::new() } else { format!("\n\n[DOMAIN MATRIX]\n{}", self.domain_context) };
 
         format!(
@@ -393,8 +384,6 @@ impl K4Engine {
     fn compile_paradox_prompt(&self, payload: &str) -> String {
         let ctx = if self.domain_context.is_empty() { String::new() } else { format!("\n\n[DOMAIN MATRIX]\n{}", self.domain_context) };
 
-        // P-ROOM Recursion handler: If the payload is a user reply (E3), wrap it
-        // in E3 instructions rather than blindly appending.
         if self.last_role == PromptRole::Paradox {
             format!(
                 "{}{}\n\n[E3 RECOGNITION READ]\nThe operator responded to the Held Paradoxes:\n\"{}\"\n\
@@ -456,3 +445,4 @@ impl K4Engine {
         to_value(&cmd).unwrap_or(JsValue::NULL)
     }
 }
+

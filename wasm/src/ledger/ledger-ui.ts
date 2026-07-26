@@ -1,7 +1,7 @@
 // wasm/ts/src/ledger/ledger-ui.ts
 import { createEffect } from '../reactive';
 import {
-  worldsGrid, languagesGrid, vocabGrid, circuitGrid, ledgerGrid, corpusGrid,
+  worldsGrid, worldLanguagesGrid, vocabGrid, circuitGrid, ledgerGrid, corpusGrid,
   selectedWorldId, selectedLanguageId, activeTab, activeWorldConfig, LedgerTab,
   addVocabTerm, addCorpusDoc, deleteCorpusDoc
 } from './grid-state';
@@ -28,7 +28,7 @@ const gridBodyEl = document.getElementById('ledger-grid-body');
 createEffect(() => {
   if (!sidebarEl) return;
   const worlds = worldsGrid.value;
-  const levels = languagesGrid.value;
+  const levels = worldLanguagesGrid.value;
   const activeW = selectedWorldId.value;
   const activeL = selectedLanguageId.value;
   sidebarEl.innerHTML = '';

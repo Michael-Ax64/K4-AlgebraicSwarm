@@ -20,6 +20,17 @@ button, input, select, textarea { font-family: inherit; font-size: inherit; }
 input, select, textarea { background: var(--bg-deep); color: var(--text-primary); border: 1px solid var(--border-strong); border-radius: 4px; padding: 8px; }
 input:focus, select:focus, textarea:focus { outline: none; border-color: var(--role-bridge); }
 
+/* Global Right-Aligned Physics Readout Rule */
+.baseline-physics {
+  font-family: var(--font-mono);
+  font-size: 0.8rem;
+  color: var(--text-muted);
+  text-align: right;
+  margin-left: auto;
+  white-space: nowrap;
+  opacity: 0.85;
+}
+
 /* =========================================================================
    STRUCTURAL LAYOUT (The 3-Pane Shell)
    ========================================================================= */
@@ -55,7 +66,7 @@ input:focus, select:focus, textarea:focus { outline: none; border-color: var(--r
 
 .circuit-item { padding-left: 15px; }
 .circuit-item.active { background: var(--bg-elevated); border-left: 4px solid var(--role-controller); color: var(--text-primary); }
-.circuit-coord { font-family: var(--font-mono); font-size: 0.75rem; opacity: 0.7; margin-top: 4px; color: var(--text-muted); }
+.circuit-coord { font-family: var(--font-mono); font-size: 0.75rem; color: var(--text-muted); text-align: right; margin-left: auto; margin-top: 4px; opacity: 0.85; }
 
 .empty-text { color: var(--text-muted); padding: 20px; font-size: 0.9rem; font-style: italic; text-align: center; }
 
@@ -139,4 +150,3 @@ input:focus, select:focus, textarea:focus { outline: none; border-color: var(--r
 ::-webkit-scrollbar-track { background: transparent; }
 ::-webkit-scrollbar-thumb { background: var(--border-strong); border-radius: 4px; }
 ::-webkit-scrollbar-thumb:hover { background: var(--text-muted); }
-

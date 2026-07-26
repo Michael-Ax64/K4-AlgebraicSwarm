@@ -8,11 +8,15 @@ import { bootSystemOS } from './router';
 import { DefaultShell } from './shell/default';
 import { screenRegistry } from './screens/registry';
 
-// Dynamic screen imports
+// Dynamic screen imports — Registers all workspace screens
 import './screens/circuit';
-import './screens/views';
+import './screens/project';
 import './screens/languages';
 import './screens/chat';
+import './screens/console';
+import './screens/documents';
+import './screens/doc-editor';
+import './screens/doc0';
 import './screens/arena';
 import './screens/api-log';
 import './screens/ledger';
@@ -21,39 +25,30 @@ import './screens/settings';
 import './screens/world';
 
 async function init() {
-    try {
-        console.log("🟢 [Boot] Initializing OS...");
+  try {
+    console.log("🟢 [Boot] Initializing OS...");
 
-        // 1. Lock in the Database
-        await bootLedger();
-        
-        // 2. Lock in the Geometry (Loads Wasm)
-        await bootAirlock();
-        
-        // 3. Lock in the Screens (Atomically)
-        screenRegistry.beginUpdates();
-        // The side-effect imports above have already called .register() silently.
-        // We close the batch, instantly triggering the UI to become aware of them.
-        screenRegistry.endUpdates();
+    await bootLedger();
+    await bootAirlock();
+    
+    screenRegistry.beginUpdates();
+    screenRegistry.endUpdates();
 
-        // 4. Mount the physical DOM
-        document.body.style.margin = '0';
-        // Removed hardcoded light background
-        document.body.innerHTML = ''; 
-        
-        const appRoot = document.createElement('div');
-        appRoot.id = 'k4-app-root';
-        appRoot.style.height = '100vh';
-        appRoot.style.display = 'flex';
-        appRoot.style.flexDirection = 'column';
-        document.body.appendChild(appRoot);
-        
-        // 5. Hand over to the Router & Shell
-        bootSystemOS(appRoot, DefaultShell);
+    document.body.style.margin = '0';
+    document.body.innerHTML = ''; 
+    
+    const appRoot = document.createElement('div');
+    appRoot.id = 'k4-app-root';
+    appRoot.style.height = '100vh';
+    appRoot.style.display = 'flex';
+    appRoot.style.flexDirection = 'column';
+    document.body.appendChild(appRoot);
+    
+    bootSystemOS(appRoot, DefaultShell);
 
-    } catch (err) {
-        console.error("🔴 [Boot] Fatal initialization error:", err);
-    }
+  } catch (err) {
+    console.error("🔴 [Boot] Fatal initialization error:", err);
+  }
 }
-init();
 
+init();
