@@ -1,23 +1,11 @@
 // wasm/src/ledger/vfs-wrapper.ts
-//
-// ============================================================================
-// LEDGER VFS WRAPPER — Virtual File System & Manifest Resolver
-// ============================================================================
 
 import { vfsDb } from './fs';
-import { Document, View, Project } from './schema';
+import { CircuitNode, DocumentPayload } from './schema';
 import {
-  resolvedInclusionForActiveView, activeViewSignal,
-  selectedWorldIdSignal, selectedProjectIdSignal
+  selectedCircuitId, resolveCircuitLineage, activeCircuit,
+  refreshAllGrids, resolvedInclusionForActiveView
 } from './grid-state';
-
-export interface ResolvedDocFile {
-  id: string;
-  name: string;
-  content: string;
-  ownerScope: 'world' | 'project';
-  poles: ('A' | 'P' | 'U' | 'I' | 'R')[];
-}
 
 export interface ResolvedVocabTerm {
   term: string;
@@ -27,7 +15,7 @@ export interface ResolvedVocabTerm {
 }
 
 export interface ResolvedManifest {
-  viewId: string;
+  circuitId: string;
   doc0: string;
   kind: string;
   warm: boolean;
@@ -42,41 +30,22 @@ export interface ResolvedManifest {
     doc0Snapshot: string;
     attachedDocIds: string[];
     activeLanguageIds: string[];
+    lineagePath: string[];
     warm: boolean;
   };
 }
 
-export interface ResolvedVfsManifest {
-  viewId: string;
-  projectId: string;
-  worldId: string;
-  doc0: string;
-  domainContext: string;
-  documentation: Record<string, string>;
-  distilled: {
-    P: Record<string, string>;
-    U: Record<string, string>;
-    I: Record<string, string>;
-    R: Record<string, string>;
-  };
-  braidContext: {
-    lastStance: string | null;
-    legalFacets: number[];
-  };
-}
-
 export class LedgerVFS {
-  /**
-   * Build complete ResolvedManifest payload for Wasm or template execution (Phase 2).
-   */
   static async buildResolvedManifest(kindKey: string = 'chat', warm: boolean = false): Promise<ResolvedManifest | null> {
-    const activeView = activeViewSignal.value;
-    const worldId = selectedWorldIdSignal.value;
-    const projectId = selectedProjectIdSignal.value;
+    const cId = selectedCircuitId.peek();
+    if (!cId) return null;
 
-    if (!activeView || !worldId || !projectId) return null;
+    const { lineage, activeCircuit: currentCircuit } = await resolveCircuitLineage(cId);
+    if (!currentCircuit) return null;
 
-    // 1. Resolve Document Inclusions (5-Column Axis)
+    const lineageIds = lineage.map(c => c.id);
+
+    // 1. EXPLICIT 5-COLUMN GRID INCLUSION (No guessing)
     const inclusions = resolvedInclusionForActiveView();
     const docs: ResolvedManifest['documents'] = [];
 
@@ -89,20 +58,30 @@ export class LedgerVFS {
       if (inc.R) poles.push('R');
 
       if (poles.length > 0) {
+        const dPayload: DocumentPayload = inc.document.documentData || {
+          content: inc.document.doc0 || '',
+          defaultA: true, defaultP: false, defaultU: false, defaultI: false, defaultR: false,
+          kind: 'source'
+        };
+
         docs.push({
           id: inc.document.id,
           name: inc.document.name,
-          content: inc.document.content,
+          content: dPayload.content || inc.document.doc0 || '',
           poles,
         });
       }
     }
 
-    // 2. Resolve Active Vocabulary Context from ticked Languages
-    const langSelections = await vfsDb.getViewLangSelections(activeView.id);
-    const activeLangIds = langSelections.filter(s => s.active).map(s => s.languageId);
-
+    // 2. Gather Vocabularies from Active Languages across Lineage
     const vocabularies: ResolvedVocabTerm[] = [];
+    const activeLangIds = new Set<string>();
+
+    for (const id of lineageIds) {
+      const sels = await vfsDb.getCircuitLangSelections(id);
+      sels.filter(s => s.active).forEach(s => activeLangIds.add(s.languageId));
+    }
+
     for (const langId of activeLangIds) {
       const terms = await vfsDb.getVocabulary(langId);
       for (const t of terms) {
@@ -116,121 +95,68 @@ export class LedgerVFS {
     }
 
     return {
-      viewId: activeView.id,
-      doc0: activeView.doc0,
+      circuitId: currentCircuit.id,
+      doc0: currentCircuit.doc0,
       kind: kindKey,
       warm,
       documents: docs,
       vocabulary: vocabularies,
       snapshot: {
-        doc0Snapshot: activeView.doc0,
+        doc0Snapshot: currentCircuit.doc0,
         attachedDocIds: docs.map(d => d.id),
-        activeLanguageIds: activeLangIds,
+        activeLanguageIds: Array.from(activeLangIds),
+        lineagePath: lineageIds,
         warm,
       },
     };
   }
 
-  /**
-   * Legacy VFS Manifest compiler for backward-compatibility.
-   */
-  async compileManifest(viewId: string): Promise<ResolvedVfsManifest> {
-    const view = await vfsDb.getView(viewId);
-    if (!view) throw new Error(`[LedgerVFS] View '${viewId}' not found.`);
-
-    const project = await vfsDb.runTx<Project>('projects', 'readonly', s => s.get(view.projectId));
-    const worldId = project ? project.worldId : '';
-
-    const inclusions = resolvedInclusionForActiveView();
-    const documentation: Record<string, string> = {};
-    const distilled: ResolvedVfsManifest['distilled'] = { P: {}, U: {}, I: {}, R: {} };
-
-    for (const inc of inclusions) {
-      const doc = inc.document;
-      if (inc.A) {
-        documentation[doc.name] = doc.content;
-      } else {
-        if (inc.P) distilled.P[doc.name] = doc.content;
-        if (inc.U) distilled.U[doc.name] = doc.content;
-        if (inc.I) distilled.I[doc.name] = doc.content;
-        if (inc.R) distilled.R[doc.name] = doc.content;
-      }
-    }
-
-    const langSelections = await vfsDb.getViewLangSelections(viewId);
-    const activeLangIds = langSelections.filter(s => s.active).map(s => s.languageId);
-
-    const vocabTerms: any[] = [];
-    for (const langId of activeLangIds) {
-      const vocabs = await vfsDb.getVocabulary(langId);
-      vocabTerms.push(...vocabs);
-    }
-
-    let domainContext = '';
-    if (vocabTerms.length > 0) {
-      domainContext = vocabTerms
-        .map(v => `- ${v.term} [${v.k4Type}] (${v.role}): ${v.description || 'No description'}`)
-        .join('\n');
-    }
-
-    const rows = await vfsDb.getLedgerRows(viewId);
-    const lastPtr = [...rows].reverse().find(r => r.ptrStance);
-
-    return {
-      viewId,
-      projectId: view.projectId,
-      worldId,
-      doc0: view.doc0,
-      domainContext,
-      documentation,
-      distilled,
-      braidContext: {
-        lastStance: lastPtr?.ptrStance || null,
-        legalFacets: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12],
-      },
-    };
-  }
-
-  /**
-   * Save or update a document at owner scope (World or Project).
-   * Called by `src/screens/doc-editor.ts`.
-   */
-  async saveDocument(
-    ownerScope: 'world' | 'project',
-    ownerId: string,
+  async saveDocumentNode(
     name: string,
     content: string,
     defaults: { A?: boolean; P?: boolean; U?: boolean; I?: boolean; R?: boolean },
     id?: string,
     kind: 'source' | 'derived' = 'source'
-  ): Promise<Document> {
+  ): Promise<CircuitNode> {
+    const activeC = activeCircuit.peek();
     const now = Date.now();
-    const doc: Document = {
+
+    const docNode: CircuitNode = {
       id: id || `doc-${now}-${Math.random().toString(36).substring(2, 7)}`,
-      ownerScope,
-      ownerId,
+      priorId: activeC ? activeC.id : null,
+      specialization: 'document',
       name,
-      content,
-      defaultA: defaults.A ?? false,
-      defaultP: defaults.P ?? false,
-      defaultU: defaults.U ?? false,
-      defaultI: defaults.I ?? false,
-      defaultR: defaults.R ?? false,
-      kind,
+      description: '',
+      doc0: content,
+      physics: { omega: 1.0, r: 10, l: 10, c: 0.1 },
+      activeFace: 'P',
+      heldAbsentVar: 'I',
+      documentData: {
+        content,
+        defaultA: defaults.A ?? false,
+        defaultP: defaults.P ?? false,
+        defaultU: defaults.U ?? false,
+        defaultI: defaults.I ?? false,
+        defaultR: defaults.R ?? false,
+        kind,
+      },
       createdAt: now,
       updatedAt: now,
     };
-    await vfsDb.upsertDocument(doc);
-    return doc;
+
+    await vfsDb.upsertCircuit(docNode);
+    await refreshAllGrids();
+    return docNode;
   }
 
-  /**
-   * Delete a document from owner scope.
-   */
   async deleteDocument(id: string): Promise<void> {
-    await vfsDb.deleteDocument(id);
+    const node = await vfsDb.getCircuit(id);
+    if (node) {
+      node.priorId = '__TRASH__';
+      await vfsDb.upsertCircuit(node);
+      await refreshAllGrids();
+    }
   }
 }
 
 export const ledgerVfs = new LedgerVFS();
-

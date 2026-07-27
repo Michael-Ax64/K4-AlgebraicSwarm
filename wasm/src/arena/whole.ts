@@ -5,20 +5,23 @@ import { Quarter, RenderMode, termFor } from './quarter';
 import { Face, StanceRegistry, Stance } from './registry';
 import { LAYOUTS, LayoutName, DEFAULT_LAYOUT, Layout } from './layout';
 import type { Vocabulary } from '../ledger/schema';
-import { vocabGrid, selectedLanguageId, worldLanguagesGrid } from '../ledger/grid-state';
+import { vocabGrid, selectedLanguageId, languagesGrid } from '../ledger/grid-state';
 import { h } from '../dom';
 
-export type ViewMode = 'spatial' | 'typographic' | 'data-grid';
+export type ViewMode = 'data-grid' | 'spatial' | 'typographic';
 export type SortTopology = 'canonical' | 'face-grouped' | 'tension' | 'braid';
 
 export interface StanceOverlay {
+  instance?: string;
+  concern?: string;
   tension?: string;
+  example?: string;
   highlight?: boolean;
 }
 
 export interface WholeInit {
-  id:      string;
-  name:    string;
+  id: string;
+  name: string;
   languageId: string;
   defaults?: Partial<Record<Face, RenderMode>>;
   layout?: LayoutName;
@@ -32,41 +35,32 @@ export interface WholeInit {
 const DEFAULT_MODE: RenderMode = 'surrounding';
 
 /**
- * Translates abstract K4 equation strings (e.g. "P = U^2 / R") 
- * into live domain nouns based on the active Vocabulary dictionary.
+ * Translates an algebraic formula (e.g. "P = U * I") into domain words (e.g. "Drive = Structure * Flow")
  */
 export function translateEquation(eq: string, vocab: readonly Vocabulary[]): string {
-    const cleanTerm = (face: any) => termFor(vocab, face, face).replace(/\s+/g, '');
-    const p = cleanTerm('P');
-    const u = cleanTerm('U');
-    const i = cleanTerm('I');
-    const r = cleanTerm('R');
+    const pWord = termFor(vocab, 'P', 'P');
+    const uWord = termFor(vocab, 'U', 'U');
+    const iWord = termFor(vocab, 'I', 'I');
+    const rWord = termFor(vocab, 'R', 'R');
 
-    return eq
-        .replace(/\bP\b/g, p)
-        .replace(/\bU\b/g, u)
-        .replace(/\bI\b/g, i)
-        .replace(/\bR\b/g, r);
+    const map: Record<string, string> = { 
+      P: pWord, 
+      U: uWord, 
+      I: iWord, 
+      R: rWord 
+    };
+    
+    // Single non-recursive pass replacing algebraic poles with domain words
+    return eq.replace(/\b(P|U|I|R)\b/g, match => map[match] || match);
 }
-
-
-export interface StanceOverlay {
-  instance?: string;
-  concern?: string;
-  tension?: string;
-  example?: string;
-  highlight?: boolean;
-}
-
-
 
 export class Whole {
-  readonly id:   string;
+  readonly id: string;
   readonly name: string;
   readonly languageId: string;
 
-  readonly language:  Signal<Vocabulary[]>;
-  readonly quarters:  readonly [Quarter, Quarter, Quarter, Quarter];
+  readonly language: Signal<Vocabulary[]>;
+  readonly quarters: readonly [Quarter, Quarter, Quarter, Quarter];
   
   readonly layoutName: Signal<LayoutName>;
   readonly viewMode: Signal<ViewMode>;
@@ -84,10 +78,10 @@ export class Whole {
     this.name = init.name;
     this.languageId = init.languageId;
 
-    this.language   = new Signal<Vocabulary[]>([]);
+    this.language = new Signal<Vocabulary[]>([]);
     this.layoutName = new Signal<LayoutName>(init.layout ?? DEFAULT_LAYOUT);
     
-    this.viewMode = new Signal<ViewMode>(init.viewMode ?? 'spatial');
+    this.viewMode = new Signal<ViewMode>(init.viewMode ?? 'data-grid');
     this.sortTopology = new Signal<SortTopology>(init.sortTopology ?? 'canonical');
     
     this.typoCols = new Signal<number>(3);
@@ -105,31 +99,25 @@ export class Whole {
     ) as unknown as readonly [Quarter, Quarter, Quarter, Quarter];
   }
 
-  quarterFor(face: Face): Quarter {
-    const q = this.quarters.find(q => q.vertex === face);
-    if (!q) throw new Error(`Quarter for face ${face} missing`);
-    return q;
-  }
-
   mount(container: HTMLElement): () => void {
     container.classList.add('whole');
     container.replaceChildren();
 
     const perspective = h('div', { className: 'whole-perspective' });
-    const tabbar      = h('div', { className: 'whole-tabbar' });
-    const body        = h('div', { className: 'whole-body' });
+    const tabbar = h('div', { className: 'whole-tabbar' });
+    const body = h('div', { className: 'whole-body' });
     container.append(perspective, tabbar, body);
 
-    // ─── 1. Perspective Controls ─────────
+    // 1. Perspective Controls
     createEffect(() => {
       if (!perspective.isConnected) return;
       if (this.hideControls) { perspective.style.display = 'none'; return; }
       perspective.replaceChildren();
 
       const curLayout = this.layoutName.value;
-      const curSort   = this.sortTopology.value;
-      const vMode     = this.viewMode.value;
-      const curLang   = selectedLanguageId.value;
+      const curSort = this.sortTopology.value;
+      const vMode = this.viewMode.value;
+      const curLang = selectedLanguageId.value;
 
       if (vMode === 'spatial') {
         const layoutSel = h('select', { className: 'perspective-select' });
@@ -160,7 +148,7 @@ export class Whole {
       }
 
       const langSel = h('select', { className: 'perspective-select' });
-      for (const lv of worldLanguagesGrid.value) {
+      for (const lv of languagesGrid.value) {
         langSel.appendChild(h('option', { value: lv.id, textContent: lv.name, selected: lv.id === curLang }));
       }
       langSel.addEventListener('change', () => { selectedLanguageId.value = langSel.value; });
@@ -172,17 +160,19 @@ export class Whole {
       );
     });
 
-    // ─── 2. ViewMode Tabs ────
+    // 2. ViewMode Tabs in Exact Order: Data Grid | Spatial Grid | Typographic
     createEffect(() => {
       if (!tabbar.isConnected) return;
       if (this.hideControls) { tabbar.style.display = 'none'; return; }
       const active = this.viewMode.value;
       tabbar.replaceChildren();
+
       const tabs: readonly { id: ViewMode; label: string }[] = [
+        { id: 'data-grid',   label: 'Data Grid' },
         { id: 'spatial',     label: 'Spatial Grid' },
         { id: 'typographic', label: 'Typographic' },
-        { id: 'data-grid',   label: 'Data Grid' },
       ];
+
       for (const t of tabs) {
         const btn = h('button', { className: `whole-tab ${t.id === active ? 'active' : ''}`, textContent: t.label });
         btn.addEventListener('click', () => { this.viewMode.value = t.id; });
@@ -190,7 +180,7 @@ export class Whole {
       }
     });
 
-    // ─── 3. Body Switcher ────
+    // 3. Body Switcher
     createEffect(() => {
       if (!body.isConnected) return;
       body.replaceChildren();
@@ -260,24 +250,17 @@ export class Whole {
         ${s.name} ${over.instance ? `— <span style="color:var(--role-bridge);">${over.instance}</span>` : ''}
       </div>
       
-      <!-- Raw Formula & Translated Equation -->
       <div style="font-family:var(--font-mono); color:var(--text-primary); font-size:0.85rem; font-weight:bold; margin-top:4px;">
           ${s.eq} <span style="color:var(--text-muted); font-weight:normal;">(${translatedEq})</span>
       </div>
 
-      <!-- Metadata -->
       <div class="paradox-meta" style="border-top:1px dashed var(--border-subtle); padding-top:4px; margin-top:6px; font-size:0.75rem; color:var(--text-muted);">
           Home: <strong style="color:var(--text-secondary)">${termFor(vocab, s.face, s.face)}</strong> | 
           Absent: <strong style="color:var(--text-secondary)">${termFor(vocab, s.held, s.held)}</strong>
       </div>
 
-      <!-- Concern (U) -->
       ${over.concern ? `<div style="margin-top:6px; font-size:0.8rem; color:var(--health-raises); font-weight:600;">🎯 Concern: ${over.concern}</div>` : ''}
-
-      <!-- Tension (I) -->
       ${over.tension ? `<div style="margin-top:6px; font-size:0.85rem; color:var(--text-primary); line-height:1.4;">${over.tension}</div>` : ''}
-
-      <!-- Example (R) -->
       ${over.example ? `<div style="margin-top:6px; font-size:0.8rem; font-style:italic; color:var(--text-secondary); border-left:2px solid var(--role-bridge); padding-left:8px; line-height:1.3;">💡 ${over.example}</div>` : ''}
   `;
   
@@ -287,7 +270,6 @@ export class Whole {
         }
         return card;
       };
-
 
       const wrapper = h('div', { className: 'paradox-grid' });
       
@@ -373,7 +355,5 @@ export class Whole {
   }
 }
 
-
 import { surroundingCellsFor as surroundingCells } from './layout';
 export { surroundingCells };
-

@@ -1,235 +1,314 @@
 // wasm/src/ledger/grid-state.ts
 
-import { Signal, createEffect, computed } from '../reactive';
+import { Signal, createEffect } from '../reactive';
 import { vfsDb } from './fs';
 import {
-  World, Project, View, Language, Vocabulary,
-  Document, ViewDocOverride, ViewLangSelection, AppKind,
-  LedgerRow, ConsoleRow, Circuit, K4Type, ElementRole,
-  ConsoleSeverity
+  CircuitNode, Vocabulary, CircuitDocOverride, CircuitLangSelection,
+  AppKind, LedgerRow, ConsoleRow, SystemSettings, ConsoleSeverity,
+  WorldSettings, DocumentPayload
 } from './schema';
 import { seedDatabaseIfEmpty } from './seed';
-import { mountWorldFrameState } from './world-frame-state';
-import {
-  refreshWorldKinds, refreshProjectKinds,
-  worldKindsGrid, projectKindsGrid
-} from '../kinds/kinds-registry';
+import { refreshKinds } from '../kinds/kinds-registry';
 
-// ─── SELECTION SIGNALS ──────────────────────────────────────────────────────
-export const selectedWorldId = new Signal<string | null>(null);
-export const selectedProjectId = new Signal<string | null>(null);
-export const selectedViewId = new Signal<string | null>(null);
+// ─── ACTIVE SOVEREIGN SPACE ────────────────────────────────────────────────
+export type SovereignSpace = 'circuits' | 'documents' | 'languages';
+export const activeSovereignSpace = new Signal<SovereignSpace>('circuits');
 
-export const selectedDocumentId = new Signal<string | null>(null);
+// ─── SIDEBAR VISIBILITY STATE ──────────────────────────────────────────────
+export const sidebarCollapsed = new Signal<boolean>(false);
+
+// ─── UNIFIED STATE SIGNALS ─────────────────────────────────────────────────
+export const selectedCircuitId = new Signal<string | null>(null);
+export const activeCircuit = new Signal<CircuitNode | null>(null);
+
 export const selectedLanguageId = new Signal<string | null>(null);
+export const selectedDocumentId = new Signal<string | null>(null);
 
-// ─── WORLD-LEVEL SIGNALS ────────────────────────────────────────────────────
-export const worldsGrid = new Signal<World[]>([]);
-export const activeWorldConfig = new Signal<World | null>(null);
-export const worldLanguagesGrid = new Signal<Language[]>([]);
-export const worldDocumentsGrid = new Signal<Document[]>([]);
+// Sovereign Domain Grids
+export const circuitsGrid = new Signal<CircuitNode[]>([]);
+export const languagesGrid = new Signal<CircuitNode[]>([]);
+export const documentsGrid = new Signal<CircuitNode[]>([]);
 
-// ─── PROJECT-LEVEL SIGNALS ──────────────────────────────────────────────────
-export const projectsGrid = new Signal<Project[]>([]);
-export const activeProject = new Signal<Project | null>(null);
-export const projectLanguagesGrid = new Signal<Language[]>([]);
-export const projectDocumentsGrid = new Signal<Document[]>([]);
+// Sovereign Domain Trash Counters
+export const circuitTrashCount = new Signal<number>(0);
+export const languageTrashCount = new Signal<number>(0);
+export const documentTrashCount = new Signal<number>(0);
+export const trashCount = circuitTrashCount; // Alias
 
-// ─── VIEW-LEVEL SIGNALS ─────────────────────────────────────────────────────
-export const viewsGrid = new Signal<View[]>([]);
-export const activeView = new Signal<View | null>(null);
-export const viewLanguagesGrid = new Signal<Language[]>([]);
-export const viewLangSelectionsGrid = new Signal<ViewLangSelection[]>([]);
-export const viewDocOverridesGrid = new Signal<ViewDocOverride[]>([]);
+// Re-Homing Freeze Mode State
+export const rehomingState = new Signal<{
+  active: boolean;
+  sourceId: string | null;
+}>({ active: false, sourceId: null });
 
+// Workspace Active Selections for Selected Circuit
+export const activeCircuitLangs = new Signal<CircuitLangSelection[]>([]);
+export const activeCircuitDocOverrides = new Signal<CircuitDocOverride[]>([]);
+export const vocabGrid = new Signal<Vocabulary[]>([]);
 export const ledgerGrid = new Signal<LedgerRow[]>([]);
-export const ledgerRowsSignal = ledgerGrid;
-
 export const consoleGrid = new Signal<ConsoleRow[]>([]);
 export const globalConsoleGrid = new Signal<ConsoleRow[]>([]);
 
-export const vocabGrid = new Signal<Vocabulary[]>([]);
-export const circuitGrid = new Signal<Circuit[]>([]);
+// Lineage Ancestor State
+export const activeCircuitLineage = new Signal<CircuitNode[]>([]);
+export const activeWorldNode = new Signal<CircuitNode | null>(null);
 
-export const selectedWorldIdSignal = selectedWorldId;
-export const selectedProjectIdSignal = selectedProjectId;
-export const selectedViewIdSignal = selectedViewId;
-export const activeViewSignal = activeView;
+// System Settings
+export const systemSettings = new Signal<SystemSettings>({
+  autoLoadSeedData: false,
+  seedDataFileNames: 'seed-data.json',
+  telemetryMaxEntries: 0
+});
 
-// ─── BOOT ───────────────────────────────────────────────────────────────────
+// Backwards-compatibility Aliases
+export const activeProject = activeCircuit;
+export const activeView = activeCircuit;
+export const activeWorldConfig = activeCircuit;
+
+export const selectedWorldId = selectedCircuitId;
+export const selectedProjectId = selectedCircuitId;
+export const selectedViewId = selectedCircuitId;
+
+export const worldsGrid = circuitsGrid;
+export const projectsGrid = circuitsGrid;
+export const viewsGrid = circuitsGrid;
+export const projectCircuitsGrid = circuitsGrid;
+export const circuitGrid = circuitsGrid;
+
+export const worldLanguagesGrid = languagesGrid;
+export const globalLanguagesGrid = languagesGrid;
+export const worldDocumentsGrid = documentsGrid;
+export const globalDocumentsGrid = documentsGrid;
+
+export const viewLangSelectionsGrid = activeCircuitLangs;
+export const viewDocOverridesGrid = activeCircuitDocOverrides;
+
+// ─── BOOT LEDGER FROM DATABASE ─────────────────────────────────────────────
 export async function bootLedger(): Promise<void> {
   await vfsDb.init();
+  
+  const savedSettings = await vfsDb.getSettings();
+  if (savedSettings) systemSettings.value = savedSettings;
+
   await seedDatabaseIfEmpty();
-  worldsGrid.value = await vfsDb.getWorlds();
-  globalConsoleGrid.value = await vfsDb.getAllConsoleRows();
+  await refreshAllGrids();
+  await refreshKinds();
+  await recalculateTrashCounters();
 
-  mountWorldFrameState();
-
-  if (worldsGrid.value.length > 0) {
-    selectedWorldId.value = worldsGrid.value[0].id;
+  if (circuitsGrid.value.length > 0 && !selectedCircuitId.value) {
+    const activeFirst = circuitsGrid.value.find(c => c.priorId !== '__TRASH__');
+    if (activeFirst) selectedCircuitId.value = activeFirst.id;
   }
 }
 
-// ─── CASCADE: WORLD ─────────────────────────────────────────────────────────
+export async function recalculateTrashCounters(): Promise<void> {
+  const allNodes = await vfsDb.getAllCircuits();
+
+  const cNodes = allNodes.filter(c => ['circuit', 'world', 'project', 'view'].includes(c.specialization));
+  const lNodes = allNodes.filter(c => c.specialization === 'language');
+  const dNodes = allNodes.filter(c => c.specialization === 'document');
+
+  circuitTrashCount.value = cNodes.filter(c => c.priorId === '__TRASH__').length;
+  languageTrashCount.value = lNodes.filter(c => c.priorId === '__TRASH__').length;
+  documentTrashCount.value = dNodes.filter(c => c.priorId === '__TRASH__').length;
+}
+
+export async function refreshAllGrids(): Promise<void> {
+  const allNodes = await vfsDb.getAllCircuits();
+
+  const cNodes = allNodes.filter(c => ['circuit', 'world', 'project', 'view'].includes(c.specialization));
+  const lNodes = allNodes.filter(c => c.specialization === 'language');
+  const dNodes = allNodes.filter(c => c.specialization === 'document');
+
+  circuitsGrid.value = cNodes;
+  languagesGrid.value = lNodes;
+  documentsGrid.value = dNodes;
+
+  globalConsoleGrid.value = await vfsDb.getAllConsoleRows();
+}
+
+// ─── CASCADE: ACTIVE CIRCUIT RESOLUTION & RECURSIVE LINEAGE ─────────────────
 createEffect(() => {
-  const wId = selectedWorldId.value;
-  if (!wId) {
-    activeWorldConfig.value = null;
-    projectsGrid.value = [];
-    worldLanguagesGrid.value = [];
-    worldDocumentsGrid.value = [];
-    selectedProjectId.value = null;
-    refreshWorldKinds(null);
-    return;
-  }
-  activeWorldConfig.value = worldsGrid.value.find(w => w.id === wId) ?? null;
-  refreshWorldKinds(wId);
-
-  Promise.all([
-    vfsDb.getProjects(wId),
-    vfsDb.getAllLanguages(),
-    vfsDb.getWorldLangSelections(wId),
-    vfsDb.getDocuments('world', wId),
-  ]).then(async ([projects, allLangs, worldSels, docs]) => {
-    // Keep World assigned languages as assigned across startups/imports
-    const activeLangIds = new Set(worldSels.filter(s => s.active).map(s => s.languageId));
-    worldLanguagesGrid.value = allLangs.filter(l => activeLangIds.has(l.id));
-    worldDocumentsGrid.value = docs;
-
-    // Auto-create & auto-open Project if none exists
-    if (projects.length === 0) {
-      const now = Date.now();
-      const mainProject: Project = {
-        id: `proj-${wId}-main`,
-        worldId: wId,
-        name: 'Main',
-        description: 'Default Main Project',
-        createdAt: now,
-        updatedAt: now,
-      };
-      await vfsDb.upsertProject(mainProject);
-      projectsGrid.value = [mainProject];
-      selectedProjectId.value = mainProject.id;
-    } else {
-      projectsGrid.value = projects;
-      if (!selectedProjectId.peek() || !projects.some(p => p.id === selectedProjectId.peek())) {
-        selectedProjectId.value = projects[0].id;
-      }
-    }
-  });
-});
-
-// ─── CASCADE: PROJECT ───────────────────────────────────────────────────────
-createEffect(() => {
-  const pId = selectedProjectId.value;
-  if (!pId) {
-    activeProject.value = null;
-    viewsGrid.value = [];
-    projectLanguagesGrid.value = [];
-    projectDocumentsGrid.value = [];
-    selectedViewId.value = null;
-    refreshProjectKinds(null);
-    return;
-  }
-  activeProject.value = projectsGrid.value.find(p => p.id === pId) ?? null;
-  refreshProjectKinds(pId);
-
-  Promise.all([
-    vfsDb.getViews(pId),
-    vfsDb.getLanguages('project', pId),
-    vfsDb.getDocuments('project', pId),
-  ]).then(([views, langs, docs]) => {
-    viewsGrid.value = views;
-    projectLanguagesGrid.value = langs;
-    projectDocumentsGrid.value = docs;
-    if (!selectedViewId.peek() && views.length > 0) {
-      selectedViewId.value = views[0].id;
-    }
-  });
-});
-
-// ─── CASCADE: VIEW ──────────────────────────────────────────────────────────
-createEffect(() => {
-  const vId = selectedViewId.value;
-  if (!vId) {
-    activeView.value = null;
-    viewLanguagesGrid.value = [];
-    viewLangSelectionsGrid.value = [];
-    viewDocOverridesGrid.value = [];
+  const cId = selectedCircuitId.value;
+  if (!cId) {
+    activeCircuit.value = null;
+    activeCircuitLineage.value = [];
+    activeWorldNode.value = null;
+    activeCircuitLangs.value = [];
+    activeCircuitDocOverrides.value = [];
     ledgerGrid.value = [];
     consoleGrid.value = [];
-    circuitGrid.value = [];
     return;
   }
-  activeView.value = viewsGrid.value.find(v => v.id === vId) ?? null;
-  Promise.all([
-    vfsDb.getLanguages('view', vId),
-    vfsDb.getViewLangSelections(vId),
-    vfsDb.getViewDocOverrides(vId),
-    vfsDb.getLedgerRows(vId),
-    vfsDb.getConsoleRows(vId),
-    vfsDb.getCircuits(vId),
-  ]).then(([langs, langSels, docOvers, ledger, console_, circuits]) => {
-    viewLanguagesGrid.value = langs;
-    viewLangSelectionsGrid.value = langSels;
-    viewDocOverridesGrid.value = docOvers;
+
+  resolveCircuitLineage(cId).then(async ({ lineage, activeCircuit: current, worldNode }) => {
+    activeCircuit.value = current || null;
+    activeCircuitLineage.value = lineage;
+    activeWorldNode.value = worldNode || null;
+
+    if (!current) return;
+
+    const [langs, docOvers, ledger, console_] = await Promise.all([
+      vfsDb.getCircuitLangSelections(cId),
+      vfsDb.getCircuitDocOverrides(cId),
+      vfsDb.getLedgerRows(cId),
+      vfsDb.getConsoleRows(cId)
+    ]);
+
+    activeCircuitLangs.value = langs;
+    activeCircuitDocOverrides.value = docOvers;
     ledgerGrid.value = ledger;
     consoleGrid.value = console_;
-    circuitGrid.value = circuits;
   });
 });
 
-// ─── CASCADE: VOCABULARY ───────────────────────────────────────────────────
-createEffect(() => {
-  const lId = selectedLanguageId.value;
-  if (!lId) {
-    vocabGrid.value = [];
-    return;
-  }
-  vfsDb.getVocabulary(lId).then(v => vocabGrid.value = v);
-});
+// ─── RECURSIVE LINEAGE RESOLUTION ───────────────────────────────────────────
+export async function resolveCircuitLineage(circuitId: string) {
+  let current = await vfsDb.getCircuit(circuitId);
+  const lineage: CircuitNode[] = [];
+  const visited = new Set<string>();
 
-// ─── COMPOSITE VIEWS & WRITES ───────────────────────────────────────────────
-export interface ComposedSection<T> {
-  scope: 'view' | 'project' | 'world';
-  scopeName: string;
-  items: T[];
+  while (current && current.priorId !== '__TRASH__' && !visited.has(current.id)) {
+    visited.add(current.id);
+    lineage.push(current);
+    current = current.priorId ? await vfsDb.getCircuit(current.priorId) : undefined;
+  }
+
+  const nearestWorld = lineage.find(c => c.specialization === 'world');
+  const apiConfig = nearestWorld?.specializationData;
+
+  return { lineage, activeCircuit: lineage[0], worldNode: nearestWorld, apiConfig };
 }
 
-export function composedLanguages(): ComposedSection<Language>[] {
-  const sections: ComposedSection<Language>[] = [];
-  const view = activeView.value;
-  const project = activeProject.value;
-  const world = activeWorldConfig.value;
-
-  if (view && viewLanguagesGrid.value.length > 0) {
-    sections.push({ scope: 'view', scopeName: view.name, items: viewLanguagesGrid.value });
-  }
-  if (project && projectLanguagesGrid.value.length > 0) {
-    sections.push({ scope: 'project', scopeName: project.name, items: projectLanguagesGrid.value });
-  }
-  if (world && worldLanguagesGrid.value.length > 0) {
-    sections.push({ scope: 'world', scopeName: world.name, items: worldLanguagesGrid.value });
-  }
-  return sections;
+// ─── COMPOSABLE HELPERS FOR WORKSPACE PANELS ───────────────────────────────
+export function composedDocuments() {
+  return [{
+    scope: 'world' as const,
+    scopeName: 'Sovereign Master Documents',
+    items: documentsGrid.value
+  }];
 }
 
-export function composedDocuments(): ComposedSection<Document>[] {
-  const sections: ComposedSection<Document>[] = [];
-  const project = activeProject.value;
-  const world = activeWorldConfig.value;
-
-  if (project && projectDocumentsGrid.value.length > 0) {
-    sections.push({ scope: 'project', scopeName: project.name, items: projectDocumentsGrid.value });
-  }
-  if (world && worldDocumentsGrid.value.length > 0) {
-    sections.push({ scope: 'world', scopeName: world.name, items: worldDocumentsGrid.value });
-  }
-  return sections;
+export function composedLanguages() {
+  return [{
+    scope: 'world' as const,
+    scopeName: 'Sovereign Languages',
+    items: languagesGrid.value
+  }];
 }
 
+export function resolvedInclusionForActiveView() {
+  const docs = documentsGrid.value;
+  const overrides = activeCircuitDocOverrides.value;
+  
+  return docs.map(d => {
+    const ov = overrides.find(o => o.documentId === d.id);
+    const dPayload: DocumentPayload = d.documentData || {
+      content: d.doc0 || '',
+      defaultA: true, defaultP: false, defaultU: false, defaultI: false, defaultR: false,
+      kind: 'source'
+    };
+    return {
+      document: d,
+      A: ov?.A ?? dPayload.defaultA,
+      P: ov?.P ?? dPayload.defaultP,
+      U: ov?.U ?? dPayload.defaultU,
+      I: ov?.I ?? dPayload.defaultI,
+      R: ov?.R ?? dPayload.defaultR,
+      overridden: !!ov
+    };
+  });
+}
+
+export async function setViewDocOverride(documentId: string, column: 'A' | 'P' | 'U' | 'I' | 'R', value: boolean | null): Promise<void> {
+  const cId = selectedCircuitId.peek();
+  if (!cId) return;
+
+  let row = activeCircuitDocOverrides.peek().find(r => r.documentId === documentId);
+  if (!row) {
+    row = { id: crypto.randomUUID(), circuitId: cId, documentId, A: null, P: null, U: null, I: null, R: null };
+  }
+  row[column] = value;
+  await vfsDb.upsertCircuitDocOverride(row);
+  activeCircuitDocOverrides.value = await vfsDb.getCircuitDocOverrides(cId);
+}
+
+export async function clearAllViewDocOverrides(): Promise<void> {
+  const cId = selectedCircuitId.peek();
+  if (!cId) return;
+  const rows = await vfsDb.getCircuitDocOverrides(cId);
+  for (const r of rows) await vfsDb.deleteCircuitDocOverride(r.id);
+  activeCircuitDocOverrides.value = [];
+}
+
+// ─── RE-HOMING ACTIONS ──────────────────────────────────────────────────────
+export function startRehoming(circuitId: string) { rehomingState.value = { active: true, sourceId: circuitId }; }
+export function cancelRehoming() { rehomingState.value = { active: false, sourceId: null }; }
+
+export async function executeRehome(targetCircuitId: string | null) {
+  const sourceId = rehomingState.value.sourceId;
+  if (!sourceId) return;
+
+  const node = await vfsDb.getCircuit(sourceId);
+  if (node) {
+    const oldPrior = node.priorId;
+    node.priorId = targetCircuitId;
+    node.updatedAt = Date.now();
+    await vfsDb.upsertCircuit(node);
+
+    if (node.specialization === 'language') {
+      if (oldPrior === '__TRASH__' && targetCircuitId !== '__TRASH__') languageTrashCount.value--;
+      if (oldPrior !== '__TRASH__' && targetCircuitId === '__TRASH__') languageTrashCount.value++;
+    } else if (node.specialization === 'document') {
+      if (oldPrior === '__TRASH__' && targetCircuitId !== '__TRASH__') documentTrashCount.value--;
+      if (oldPrior !== '__TRASH__' && targetCircuitId === '__TRASH__') documentTrashCount.value++;
+    } else {
+      if (oldPrior === '__TRASH__' && targetCircuitId !== '__TRASH__') circuitTrashCount.value--;
+      if (oldPrior !== '__TRASH__' && targetCircuitId === '__TRASH__') circuitTrashCount.value++;
+    }
+
+    await refreshAllGrids();
+  }
+  cancelRehoming();
+}
+
+// ─── DELETE / TRASH ACTIONS ─────────────────────────────────────────────────
+export async function deleteCircuitToTrash(circuitId: string) {
+  const node = await vfsDb.getCircuit(circuitId);
+  if (!node || node.priorId === '__TRASH__') return;
+
+  node.priorId = '__TRASH__';
+  node.updatedAt = Date.now();
+  await vfsDb.upsertCircuit(node);
+
+  if (node.specialization === 'language') languageTrashCount.value++;
+  else if (node.specialization === 'document') documentTrashCount.value++;
+  else circuitTrashCount.value++;
+
+  await refreshAllGrids();
+}
+
+export async function purgeCircuitPermanent(circuitId: string) {
+  const node = await vfsDb.getCircuit(circuitId);
+  if (!node) return;
+
+  if (node.priorId === '__TRASH__') {
+    if (node.specialization === 'language') languageTrashCount.value--;
+    else if (node.specialization === 'document') documentTrashCount.value--;
+    else circuitTrashCount.value--;
+  }
+
+  await vfsDb.purgeCircuit(circuitId);
+  await refreshAllGrids();
+  
+  if (selectedCircuitId.peek() === circuitId) selectedCircuitId.value = null;
+  if (selectedLanguageId.peek() === circuitId) selectedLanguageId.value = null;
+  if (selectedDocumentId.peek() === circuitId) selectedDocumentId.value = null;
+}
+
+// ─── LEDGER & CONSOLE LOGGING ───────────────────────────────────────────────
 export async function beginLedgerTurn(params: {
-  viewId?: string;
+  circuitId?: string;
   kind: string;
   direction: 'out' | 'in' | 'system';
   header: string;
@@ -238,18 +317,19 @@ export async function beginLedgerTurn(params: {
     doc0Snapshot: string;
     attachedDocIds: string[];
     activeLanguageIds: string[];
+    lineagePath: string[];
     warm: boolean;
   };
   parentTurnId?: string;
 }): Promise<LedgerRow | null> {
-  const vId = params.viewId || selectedViewId.peek();
-  if (!vId) return null;
+  const cId = params.circuitId || selectedCircuitId.peek();
+  if (!cId) return null;
 
-  const turnNumber = await vfsDb.getNextLedgerTurnNumber(vId);
+  const turnNumber = await vfsDb.getNextLedgerTurnNumber(cId);
   const now = Date.now();
   const row: LedgerRow = {
     id: `led-${now}-${Math.random().toString(36).substring(2, 7)}`,
-    viewId: vId,
+    circuitId: cId,
     turnNumber,
     seq: 1,
     parentId: params.parentTurnId,
@@ -261,26 +341,27 @@ export async function beginLedgerTurn(params: {
     doc0Snapshot: params.snapshot.doc0Snapshot,
     attachedDocIds: params.snapshot.attachedDocIds,
     activeLanguageIds: params.snapshot.activeLanguageIds,
+    lineagePath: params.snapshot.lineagePath,
     warm: params.snapshot.warm,
     createdAt: now,
     updatedAt: now,
   };
   await vfsDb.upsertLedgerRow(row);
-  ledgerGrid.value = await vfsDb.getLedgerRows(vId);
+  ledgerGrid.value = await vfsDb.getLedgerRows(cId);
   return row;
 }
 
 export async function appendConsoleRow(params: {
-  viewId?: string | null;
+  circuitId?: string | null;
   severity: ConsoleSeverity;
   category: string;
   message: string;
 }): Promise<ConsoleRow> {
   const now = Date.now();
-  const vId = params.viewId !== undefined ? params.viewId : selectedViewId.peek();
+  const cId = params.circuitId !== undefined ? params.circuitId : selectedCircuitId.peek();
   const row: ConsoleRow = {
     id: `con-${now}-${Math.random().toString(36).substring(2, 7)}`,
-    viewId: vId,
+    circuitId: cId,
     severity: params.severity,
     category: params.category,
     message: params.message,
@@ -289,90 +370,26 @@ export async function appendConsoleRow(params: {
   };
   await vfsDb.upsertConsoleRow(row);
 
-  const activeVId = selectedViewId.peek();
-  if (vId === activeVId) {
-    consoleGrid.value = await vfsDb.getConsoleRows(activeVId);
+  if (cId === selectedCircuitId.peek()) {
+    consoleGrid.value = await vfsDb.getConsoleRows(cId);
   }
   globalConsoleGrid.value = await vfsDb.getAllConsoleRows();
   return row;
 }
 
-export interface ResolvedInclusion {
-  document: Document;
-  A: boolean; P: boolean; U: boolean; I: boolean; R: boolean;
-  overridden: boolean;
+export async function updateActiveCircuitDoc0(newDoc0: string): Promise<void> {
+  const circ = activeCircuit.peek();
+  if (!circ) return;
+  const updated: CircuitNode = { ...circ, doc0: newDoc0, updatedAt: Date.now() };
+  await vfsDb.upsertCircuit(updated);
+  activeCircuit.value = updated;
+  await refreshAllGrids();
 }
 
-export function resolvedInclusionForActiveView(): ResolvedInclusion[] {
-  const sections = composedDocuments();
-  const overrides = viewDocOverridesGrid.value;
-  const out: ResolvedInclusion[] = [];
+export const updateActiveViewDoc0 = updateActiveCircuitDoc0;
 
-  for (const section of sections) {
-    for (const doc of section.items) {
-      const override = overrides.find(o => o.documentId === doc.id);
-      const pick = <K extends 'A'|'P'|'U'|'I'|'R'>(k: K): boolean => {
-        if (override && override[k] !== null && override[k] !== undefined) {
-          return override[k] as boolean;
-        }
-        return (doc as any)['default' + k] as boolean;
-      };
-      out.push({
-        document: doc,
-        A: pick('A'), P: pick('P'), U: pick('U'), I: pick('I'), R: pick('R'),
-        overridden: !!override,
-      });
-    }
-  }
-  return out;
-}
-
-export async function setViewDocOverride(
-  documentId: string,
-  column: 'A' | 'P' | 'U' | 'I' | 'R',
-  value: boolean | null
-): Promise<void> {
-  const vId = selectedViewId.peek();
-  if (!vId) return;
-
-  let row = viewDocOverridesGrid.value.find(r => r.documentId === documentId);
-  if (!row) {
-    row = {
-      id: crypto.randomUUID(),
-      viewId: vId,
-      documentId,
-      A: null, P: null, U: null, I: null, R: null,
-    };
-  }
-  row[column] = value;
-
-  const allNull = row.A === null && row.P === null && row.U === null && row.I === null && row.R === null;
-  if (allNull) {
-    await vfsDb.deleteViewDocOverride(row.id);
-  } else {
-    await vfsDb.upsertViewDocOverride(row);
-  }
-  viewDocOverridesGrid.value = await vfsDb.getViewDocOverrides(vId);
-}
-
-export async function clearAllViewDocOverrides(): Promise<void> {
-  const vId = selectedViewId.peek();
-  if (!vId) return;
-  await vfsDb.clearViewDocOverrides(vId);
-  viewDocOverridesGrid.value = [];
-}
-
-export async function updateActiveViewDoc0(newDoc0: string): Promise<void> {
-  const view = activeView.peek();
-  if (!view) return;
-  const updated: View = { ...view, doc0: newDoc0, updatedAt: Date.now() };
-  await vfsDb.upsertView(updated);
-  activeView.value = updated;
-  viewsGrid.value = viewsGrid.value.map(v => v.id === updated.id ? updated : v);
-}
-
-export async function markLedgerAnswerKept(viewId: string, rowId: string): Promise<void> {
-  const rows = await vfsDb.getLedgerRows(viewId);
+export async function markLedgerAnswerKept(circuitId: string, rowId: string): Promise<void> {
+  const rows = await vfsDb.getLedgerRows(circuitId);
   const target = rows.find(r => r.id === rowId);
   if (!target) return;
 
@@ -386,39 +403,27 @@ export async function markLedgerAnswerKept(viewId: string, rowId: string): Promi
       }
     }
   }
-  ledgerGrid.value = await vfsDb.getLedgerRows(viewId);
+  ledgerGrid.value = await vfsDb.getLedgerRows(circuitId);
 }
 
-export async function editLedgerRow(
-  id: string,
-  patch: Partial<Pick<LedgerRow,
-    'header' | 'body' | 'doc0Snapshot' | 'attachedDocIds' |
-    'activeLanguageIds' | 'warm' | 'kept' |
-    'ptrCycle' | 'ptrSeq' | 'ptrStance' | 'ptrHealth' | 'ptrSnapshotJson'
-  >>
-): Promise<void> {
-  const vId = selectedViewId.peek();
-  if (!vId) return;
+export async function editLedgerRow(id: string, patch: Partial<LedgerRow>): Promise<void> {
+  const cId = selectedCircuitId.peek();
+  if (!cId) return;
   const existing = await vfsDb.getLedgerRow(id);
   if (!existing) return;
   const updated: LedgerRow = { ...existing, ...patch, updatedAt: Date.now() };
   await vfsDb.upsertLedgerRow(updated);
-  ledgerGrid.value = await vfsDb.getLedgerRows(vId);
+  ledgerGrid.value = await vfsDb.getLedgerRows(cId);
 }
 
-export async function addVocabTerm(
-  term: string,
-  k4Type: K4Type,
-  role: ElementRole,
-  languageId: string
-): Promise<void> {
+export async function addVocabTerm(term: string, k4Type: any, role: any, languageId: string): Promise<void> {
   await vfsDb.upsertVocabulary({
     id: crypto.randomUUID(),
     languageId,
     term,
     k4Type,
     role,
-    description: '',
+    description: ''
   });
   if (selectedLanguageId.peek() === languageId) {
     vocabGrid.value = await vfsDb.getVocabulary(languageId);

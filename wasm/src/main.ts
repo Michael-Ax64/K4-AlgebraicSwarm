@@ -12,6 +12,8 @@ import { screenRegistry } from './screens/registry';
 import './screens/circuit';
 import './screens/project';
 import './screens/languages';
+import './screens/view';
+import './screens/kinds';
 import './screens/chat';
 import './screens/console';
 import './screens/documents';

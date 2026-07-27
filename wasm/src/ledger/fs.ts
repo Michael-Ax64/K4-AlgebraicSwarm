@@ -1,30 +1,25 @@
 // wasm/src/ledger/fs.ts
 
 import {
-  World, Project, View, Language, Vocabulary,
-  Document, ViewDocOverride, WorldLangSelection, ViewLangSelection,
-  AppKind, LedgerRow, ConsoleRow, WorldFrameState, Circuit
+  CircuitNode, Vocabulary, CircuitDocOverride, CircuitLangSelection,
+  AppKind, LedgerRow, ConsoleRow, WorldFrameState, SystemSettings,
+  CircuitSpecialization
 } from './schema';
 
-const DB_NAME = 'K4Manifold_VFS';
-const DB_VERSION = 5;
+const DB_NAME = 'K4Manifold_Unified_VFS';
+const DB_VERSION = 7;
 
 const REQUIRED_STORES = [
-  'worlds',
-  'projects',
-  'views',
-  'languages',
+  'circuits',
   'vocabularies',
-  'world_lang_selections',
-  'documents',
-  'view_doc_overrides',
-  'view_lang_selections',
+  'circuit_doc_overrides',
+  'circuit_lang_selections',
   'kinds',
   'ledger',
   'console_log',
   'world_frame_state',
-  'circuits',
   'engine_state',
+  'settings'
 ];
 
 class LedgerFS {
@@ -35,12 +30,11 @@ class LedgerFS {
       await this.openDatabase();
       for (const store of REQUIRED_STORES) {
         if (!this.db!.objectStoreNames.contains(store)) {
-          throw new Error(`Missing required object store: ${store}`);
+          throw new Error(`Missing required store: ${store}`);
         }
       }
     } catch (err) {
-      console.warn('⚠️ [LedgerFS] Schema audit failed — factory reset as last resort.', err);
-      await this.factoryReset();
+      console.warn('⚠️ [LedgerFS] Schema audit check:', err);
       await this.openDatabase();
     }
   }
@@ -51,10 +45,6 @@ class LedgerFS {
 
       request.onupgradeneeded = (event) => {
         const db = (event.target as IDBOpenDBRequest).result;
-        const existingStores = Array.from(db.objectStoreNames);
-        for (const name of existingStores) {
-          db.deleteObjectStore(name);
-        }
         this.createStores(db);
       };
 
@@ -67,53 +57,57 @@ class LedgerFS {
   }
 
   private createStores(db: IDBDatabase): void {
-    db.createObjectStore('worlds', { keyPath: 'id' });
+    if (!db.objectStoreNames.contains('circuits')) {
+      const circStore = db.createObjectStore('circuits', { keyPath: 'id' });
+      circStore.createIndex('priorId', 'priorId', { unique: false });
+      circStore.createIndex('specialization', 'specialization', { unique: false });
+    }
 
-    const projStore = db.createObjectStore('projects', { keyPath: 'id' });
-    projStore.createIndex('worldId', 'worldId', { unique: false });
+    if (!db.objectStoreNames.contains('vocabularies')) {
+      const vocabStore = db.createObjectStore('vocabularies', { keyPath: 'id' });
+      vocabStore.createIndex('languageId', 'languageId', { unique: false });
+    }
 
-    const viewStore = db.createObjectStore('views', { keyPath: 'id' });
-    viewStore.createIndex('projectId', 'projectId', { unique: false });
+    if (!db.objectStoreNames.contains('circuit_doc_overrides')) {
+      const cdoStore = db.createObjectStore('circuit_doc_overrides', { keyPath: 'id' });
+      cdoStore.createIndex('circuitId', 'circuitId', { unique: false });
+    }
 
-    // Global Languages (Peer to Worlds)
-    db.createObjectStore('languages', { keyPath: 'id' });
+    if (!db.objectStoreNames.contains('circuit_lang_selections')) {
+      const clsStore = db.createObjectStore('circuit_lang_selections', { keyPath: 'id' });
+      clsStore.createIndex('circuitId', 'circuitId', { unique: false });
+    }
 
-    const vocabStore = db.createObjectStore('vocabularies', { keyPath: 'id' });
-    vocabStore.createIndex('languageId', 'languageId', { unique: false });
+    if (!db.objectStoreNames.contains('kinds')) {
+      const kindStore = db.createObjectStore('kinds', { keyPath: 'id' });
+      kindStore.createIndex('key', 'key', { unique: true });
+    }
 
-    const wlsStore = db.createObjectStore('world_lang_selections', { keyPath: 'id' });
-    wlsStore.createIndex('worldId', 'worldId', { unique: false });
+    if (!db.objectStoreNames.contains('ledger')) {
+      const turnStore = db.createObjectStore('ledger', { keyPath: 'id' });
+      turnStore.createIndex('circuitId', 'circuitId', { unique: false });
+    }
 
-    const docStore = db.createObjectStore('documents', { keyPath: 'id' });
-    docStore.createIndex('ownerScope_ownerId', ['ownerScope', 'ownerId'], { unique: false });
+    if (!db.objectStoreNames.contains('console_log')) {
+      const consoleStore = db.createObjectStore('console_log', { keyPath: 'id' });
+      consoleStore.createIndex('circuitId', 'circuitId', { unique: false });
+    }
 
-    const vdoStore = db.createObjectStore('view_doc_overrides', { keyPath: 'id' });
-    vdoStore.createIndex('viewId', 'viewId', { unique: false });
+    if (!db.objectStoreNames.contains('world_frame_state')) {
+      const wfsStore = db.createObjectStore('world_frame_state', { keyPath: 'id' });
+      wfsStore.createIndex('worldId', 'worldId', { unique: false });
+    }
 
-    const vlsStore = db.createObjectStore('view_lang_selections', { keyPath: 'id' });
-    vlsStore.createIndex('viewId', 'viewId', { unique: false });
+    if (!db.objectStoreNames.contains('engine_state')) {
+      db.createObjectStore('engine_state', { keyPath: 'id' });
+    }
 
-    const kindStore = db.createObjectStore('kinds', { keyPath: 'id' });
-    kindStore.createIndex('scope_scopeId', ['scope', 'scopeId'], { unique: false });
-    kindStore.createIndex('key', 'key', { unique: false });
-
-    const turnStore = db.createObjectStore('ledger', { keyPath: 'id' });
-    turnStore.createIndex('viewId', 'viewId', { unique: false });
-    turnStore.createIndex('viewId_turnNumber_seq', ['viewId', 'turnNumber', 'seq'], { unique: false });
-
-    const consoleStore = db.createObjectStore('console_log', { keyPath: 'id' });
-    consoleStore.createIndex('viewId', 'viewId', { unique: false });
-
-    const wfsStore = db.createObjectStore('world_frame_state', { keyPath: 'id' });
-    wfsStore.createIndex('worldId', 'worldId', { unique: false });
-
-    const circStore = db.createObjectStore('circuits', { keyPath: 'id' });
-    circStore.createIndex('viewId', 'viewId', { unique: false });
-
-    db.createObjectStore('engine_state', { keyPath: 'id' });
+    if (!db.objectStoreNames.contains('settings')) {
+      db.createObjectStore('settings', { keyPath: 'id' });
+    }
   }
 
-  private async runTx<T>(storeName: string, mode: IDBTransactionMode, op: (store: IDBObjectStore) => IDBRequest): Promise<T> {
+  public async runTx<T>(storeName: string, mode: IDBTransactionMode, op: (store: IDBObjectStore) => IDBRequest): Promise<T> {
     if (!this.db) await this.init();
     return new Promise<T>((resolve, reject) => {
       const tx = this.db!.transaction(storeName, mode);
@@ -133,121 +127,136 @@ class LedgerFS {
     });
   }
 
-  // ─── WORLDS, PROJECTS, VIEWS ──────────────────────────────────────────────
-  async getWorlds(): Promise<World[]> { return this.runTx('worlds', 'readonly', s => s.getAll()); }
-  async upsertWorld(world: World): Promise<void> { await this.runTx('worlds', 'readwrite', s => s.put(world)); }
-  async deleteWorld(id: string): Promise<void> { await this.runTx('worlds', 'readwrite', s => s.delete(id)); }
+  // ─── UNIFIED CIRCUIT NODE STORE ───────────────────────────────────────────
+  async getAllCircuits(): Promise<CircuitNode[]> { return this.runTx('circuits', 'readonly', s => s.getAll()); }
+  async getCircuit(id: string): Promise<CircuitNode | undefined> { return this.runTx('circuits', 'readonly', s => s.get(id)); }
+  async upsertCircuit(circuit: CircuitNode): Promise<void> { await this.runTx('circuits', 'readwrite', s => s.put(circuit)); }
+  async purgeCircuit(id: string): Promise<void> { await this.runTx('circuits', 'readwrite', s => s.delete(id)); }
 
-  async getProjects(worldId: string): Promise<Project[]> { return this.getAllByIndex('projects', 'worldId', worldId); }
-  async upsertProject(project: Project): Promise<void> { await this.runTx('projects', 'readwrite', s => s.put(project)); }
-  async deleteProject(id: string): Promise<void> { await this.runTx('projects', 'readwrite', s => s.delete(id)); }
-
-  async getViews(projectId: string): Promise<View[]> { return this.getAllByIndex('views', 'projectId', projectId); }
-  async getView(id: string): Promise<View | undefined> { return this.runTx('views', 'readonly', s => s.get(id)); }
-  async upsertView(view: View): Promise<void> { await this.runTx('views', 'readwrite', s => s.put(view)); }
-  async deleteView(id: string): Promise<void> { await this.runTx('views', 'readwrite', s => s.delete(id)); }
-
-  // ─── GLOBAL LANGUAGES (CROSS-WORLD PEERS) ─────────────────────────────────
-  async getAllLanguages(): Promise<Language[]> { return this.runTx('languages', 'readonly', s => s.getAll()); }
-  async getLanguage(id: string): Promise<Language | undefined> { return this.runTx('languages', 'readonly', s => s.get(id)); }
-  async upsertLanguage(lang: Language): Promise<void> { await this.runTx('languages', 'readwrite', s => s.put(lang)); }
-  async deleteLanguage(id: string): Promise<void> { await this.runTx('languages', 'readwrite', s => s.delete(id)); }
-
-  /**
-   * Helper query resolving linked Languages for a given scope.
-   */
-  async getLanguages(scope?: 'world' | 'project' | 'view', scopeId?: string): Promise<Language[]> {
-    const all = await this.getAllLanguages();
-    if (!scope || !scopeId) return all;
-
-    if (scope === 'world') {
-      const worldSels = await this.getWorldLangSelections(scopeId);
-      const activeIds = new Set(worldSels.filter(s => s.active).map(s => s.languageId));
-      return all.filter(l => activeIds.has(l.id));
-    } else if (scope === 'view') {
-      const viewSels = await this.getViewLangSelections(scopeId);
-      const activeIds = new Set(viewSels.filter(s => s.active).map(s => s.languageId));
-      return all.filter(l => activeIds.has(l.id));
-    }
-    return all;
+  async getCircuitsBySpecialization(specs: CircuitSpecialization[]): Promise<CircuitNode[]> {
+    const all = await this.getAllCircuits();
+    return all.filter(c => specs.includes(c.specialization));
   }
 
-  async getVocabulary(languageId: string): Promise<Vocabulary[]> { return this.getAllByIndex('vocabularies', 'languageId', languageId); }
+  // ─── SOVEREIGN LANGUAGES ──────────────────────────────────────────────────
+  async getAllLanguages(): Promise<CircuitNode[]> {
+    const all = await this.getAllCircuits();
+    return all.filter(c => c.specialization === 'language' && c.priorId !== '__TRASH__');
+  }
+
+  async getLanguage(id: string): Promise<CircuitNode | undefined> {
+    const c = await this.getCircuit(id);
+    return (c && c.specialization === 'language') ? c : undefined;
+  }
+
+  async upsertLanguage(lang: CircuitNode): Promise<void> {
+    lang.specialization = 'language';
+    await this.upsertCircuit(lang);
+  }
+
+  async deleteLanguage(id: string): Promise<void> {
+    const node = await this.getCircuit(id);
+    if (node) {
+      node.priorId = '__TRASH__';
+      node.updatedAt = Date.now();
+      await this.upsertCircuit(node);
+    }
+  }
+
+  // ─── SOVEREIGN DOCUMENTS ──────────────────────────────────────────────────
+  async getAllDocuments(): Promise<CircuitNode[]> {
+    const all = await this.getAllCircuits();
+    return all.filter(c => c.specialization === 'document' && c.priorId !== '__TRASH__');
+  }
+
+  async getDocument(id: string): Promise<CircuitNode | undefined> {
+    const c = await this.getCircuit(id);
+    return (c && c.specialization === 'document') ? c : undefined;
+  }
+
+  async upsertDocument(doc: CircuitNode): Promise<void> {
+    doc.specialization = 'document';
+    await this.upsertCircuit(doc);
+  }
+
+  async deleteDocument(id: string): Promise<void> {
+    const node = await this.getCircuit(id);
+    if (node) {
+      node.priorId = '__TRASH__';
+      node.updatedAt = Date.now();
+      await this.upsertCircuit(node);
+    }
+  }
+
+  // ─── VOCABULARIES (FAIL-SAFE INDEXED + SCANNED FETCH) ────────────────────
+  async getVocabulary(languageId: string): Promise<Vocabulary[]> {
+    if (!languageId) return [];
+    try {
+      const indexed = await this.getAllByIndex<Vocabulary>('vocabularies', 'languageId', languageId);
+      if (indexed && indexed.length > 0) return indexed;
+    } catch (e) {
+      // Fallback if index scan encounters legacy DB schema
+    }
+    const all = await this.runTx<Vocabulary[]>('vocabularies', 'readonly', s => s.getAll());
+    return all.filter(v => v.languageId === languageId);
+  }
+
   async upsertVocabulary(vocab: Vocabulary): Promise<void> { await this.runTx('vocabularies', 'readwrite', s => s.put(vocab)); }
   async deleteVocabulary(id: string): Promise<void> { await this.runTx('vocabularies', 'readwrite', s => s.delete(id)); }
 
-  async getWorldLangSelections(worldId: string): Promise<WorldLangSelection[]> { return this.getAllByIndex('world_lang_selections', 'worldId', worldId); }
-  async upsertWorldLangSelection(sel: WorldLangSelection): Promise<void> { await this.runTx('world_lang_selections', 'readwrite', s => s.put(sel)); }
-
-  async getViewLangSelections(viewId: string): Promise<ViewLangSelection[]> { return this.getAllByIndex('view_lang_selections', 'viewId', viewId); }
-  async upsertViewLangSelection(sel: ViewLangSelection): Promise<void> { await this.runTx('view_lang_selections', 'readwrite', s => s.put(sel)); }
-
-  // ─── DOCUMENTS & OVERRIDES ────────────────────────────────────────────────
-  async getDocuments(ownerScope: 'world' | 'project', ownerId: string): Promise<Document[]> {
-    return this.getAllByIndex('documents', 'ownerScope_ownerId', [ownerScope, ownerId]);
+  // ─── JUNCTIONS ────────────────────────────────────────────────────────────
+  async getCircuitLangSelections(circuitId: string): Promise<CircuitLangSelection[]> {
+    return this.getAllByIndex('circuit_lang_selections', 'circuitId', circuitId);
   }
-  async upsertDocument(doc: Document): Promise<void> { await this.runTx('documents', 'readwrite', s => s.put(doc)); }
-  async deleteDocument(id: string): Promise<void> { await this.runTx('documents', 'readwrite', s => s.delete(id)); }
-
-  async getViewDocOverrides(viewId: string): Promise<ViewDocOverride[]> { return this.getAllByIndex('view_doc_overrides', 'viewId', viewId); }
-  async upsertViewDocOverride(override: ViewDocOverride): Promise<void> { await this.runTx('view_doc_overrides', 'readwrite', s => s.put(override)); }
-  async deleteViewDocOverride(id: string): Promise<void> { await this.runTx('view_doc_overrides', 'readwrite', s => s.delete(id)); }
-  async clearViewDocOverrides(viewId: string): Promise<void> {
-    const rows = await this.getViewDocOverrides(viewId);
-    for (const r of rows) await this.deleteViewDocOverride(r.id);
+  async upsertCircuitLangSelection(sel: CircuitLangSelection): Promise<void> {
+    await this.runTx('circuit_lang_selections', 'readwrite', s => s.put(sel));
   }
 
-  // ─── KINDS STORE ──────────────────────────────────────────────────────────
-  async getKinds(scope: 'world' | 'project', scopeId: string): Promise<AppKind[]> {
-    return this.getAllByIndex('kinds', 'scope_scopeId', [scope, scopeId]);
+  async getCircuitDocOverrides(circuitId: string): Promise<CircuitDocOverride[]> {
+    return this.getAllByIndex('circuit_doc_overrides', 'circuitId', circuitId);
   }
-  async getKindByKey(key: string): Promise<AppKind | undefined> {
-    const results = await this.getAllByIndex<AppKind>('kinds', 'key', key);
-    return results[0];
+  async upsertCircuitDocOverride(override: CircuitDocOverride): Promise<void> {
+    await this.runTx('circuit_doc_overrides', 'readwrite', s => s.put(override));
   }
+  async deleteCircuitDocOverride(id: string): Promise<void> {
+    await this.runTx('circuit_doc_overrides', 'readwrite', s => s.delete(id));
+  }
+
+  // ─── KINDS ────────────────────────────────────────────────────────────────
+  async getAllKinds(): Promise<AppKind[]> { return this.runTx('kinds', 'readonly', s => s.getAll()); }
+  async getKindByKey(key: string): Promise<AppKind | undefined> { return this.runTx('kinds', 'readonly', s => s.get(key)); }
   async upsertKind(kind: AppKind): Promise<void> { await this.runTx('kinds', 'readwrite', s => s.put(kind)); }
   async deleteKind(id: string): Promise<void> { await this.runTx('kinds', 'readwrite', s => s.delete(id)); }
 
-  // ─── LEDGER (EXCHANGES & TURNS) ───────────────────────────────────────────
-  async getLedgerRows(viewId: string): Promise<LedgerRow[]> {
-    const rows = await this.getAllByIndex<LedgerRow>('ledger', 'viewId', viewId);
+  // ─── LEDGER & CONSOLE ─────────────────────────────────────────────────────
+  async getLedgerRows(circuitId: string): Promise<LedgerRow[]> {
+    const rows = await this.getAllByIndex<LedgerRow>('ledger', 'circuitId', circuitId);
     return rows.sort((a, b) => a.turnNumber !== b.turnNumber ? a.turnNumber - b.turnNumber : a.seq - b.seq);
   }
   async getLedgerRow(id: string): Promise<LedgerRow | undefined> { return this.runTx('ledger', 'readonly', s => s.get(id)); }
   async upsertLedgerRow(row: LedgerRow): Promise<void> { await this.runTx('ledger', 'readwrite', s => s.put(row)); }
-  async deleteLedgerRow(id: string): Promise<void> { await this.runTx('ledger', 'readwrite', s => s.delete(id)); }
 
-  async getNextLedgerTurnNumber(viewId: string): Promise<number> {
-    const rows = await this.getLedgerRows(viewId);
+  async getNextLedgerTurnNumber(circuitId: string): Promise<number> {
+    const rows = await this.getLedgerRows(circuitId);
     if (rows.length === 0) return 1;
     return rows[rows.length - 1].turnNumber + 1;
   }
 
-  async getNextLedgerSeq(viewId: string, turnNumber: number): Promise<number> {
-    const rows = await this.getLedgerRows(viewId);
-    const inTurn = rows.filter(r => r.turnNumber === turnNumber);
-    if (inTurn.length === 0) return 1;
-    return Math.max(...inTurn.map(r => r.seq)) + 1;
-  }
-
-  // ─── CONSOLE & UI STATE ───────────────────────────────────────────────────
-  async getConsoleRows(viewId: string | null): Promise<ConsoleRow[]> {
-    if (viewId === null) {
+  async getConsoleRows(circuitId: string | null): Promise<ConsoleRow[]> {
+    if (circuitId === null) {
       const all = await this.runTx<ConsoleRow[]>('console_log', 'readonly', s => s.getAll());
-      return all.filter(r => r.viewId === null).sort((a, b) => a.createdAt - b.createdAt);
+      return all.filter(r => r.circuitId === null).sort((a, b) => a.createdAt - b.createdAt);
     }
-    const rows = await this.getAllByIndex<ConsoleRow>('console_log', 'viewId', viewId);
+    const rows = await this.getAllByIndex<ConsoleRow>('console_log', 'circuitId', circuitId);
     return rows.sort((a, b) => a.createdAt - b.createdAt);
   }
-
   async getAllConsoleRows(): Promise<ConsoleRow[]> {
     const all = await this.runTx<ConsoleRow[]>('console_log', 'readonly', s => s.getAll());
     return all.sort((a, b) => a.createdAt - b.createdAt);
   }
-
   async upsertConsoleRow(row: ConsoleRow): Promise<void> { await this.runTx('console_log', 'readwrite', s => s.put(row)); }
-  async deleteConsoleRow(id: string): Promise<void> { await this.runTx('console_log', 'readwrite', s => s.delete(id)); }
 
+  // ─── FRAME STATE & SETTINGS ───────────────────────────────────────────────
   async getWorldFrameStates(worldId: string): Promise<WorldFrameState[]> { return this.getAllByIndex('world_frame_state', 'worldId', worldId); }
   async getWorldFrameState(worldId: string, frameKey: string): Promise<WorldFrameState | undefined> {
     return this.runTx('world_frame_state', 'readonly', s => s.get(`${worldId}:${frameKey}`));
@@ -256,20 +265,19 @@ class LedgerFS {
     const id = `${worldId}:${frameKey}`;
     const now = Date.now();
     const existing = await this.runTx<WorldFrameState | undefined>('world_frame_state', 'readonly', s => s.get(id));
-    const row: WorldFrameState = {
-      id, worldId, frameKey, stateJson,
-      createdAt: existing?.createdAt ?? now,
-      updatedAt: now,
-    };
+    const row: WorldFrameState = { id, worldId, frameKey, stateJson, createdAt: existing?.createdAt ?? now, updatedAt: now };
     await this.runTx('world_frame_state', 'readwrite', s => s.put(row));
   }
+  async deleteWorldFrameState(worldId: string, frameKey: string): Promise<void> {
+    await this.runTx('world_frame_state', 'readwrite', s => s.delete(`${worldId}:${frameKey}`));
+  }
 
-  async getCircuits(viewId: string): Promise<Circuit[]> { return this.getAllByIndex('circuits', 'viewId', viewId); }
-  async upsertCircuit(circuit: Circuit): Promise<void> { await this.runTx('circuits', 'readwrite', s => s.put(circuit)); }
-  async deleteCircuit(id: string): Promise<void> { await this.runTx('circuits', 'readwrite', s => s.delete(id)); }
+  async getSettings(): Promise<SystemSettings | undefined> { return this.runTx('settings', 'readonly', s => s.get('global')); }
+  async upsertSettings(settings: SystemSettings): Promise<void> { await this.runTx('settings', 'readwrite', s => s.put({ id: 'global', ...settings })); }
 
   async getEngineState(): Promise<{ id: string, raw: string } | undefined> { return this.runTx('engine_state', 'readonly', s => s.get('current')); }
   async putEngineState(raw: string): Promise<void> { await this.runTx('engine_state', 'readwrite', s => s.put({ id: 'current', raw })); }
+  async deleteEngineState(): Promise<void> { await this.runTx('engine_state', 'readwrite', s => s.delete('current')); }
 
   async factoryReset(): Promise<void> {
     if (this.db) { this.db.close(); this.db = null; }
@@ -283,4 +291,3 @@ class LedgerFS {
 }
 
 export const vfsDb = new LedgerFS();
-

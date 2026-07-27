@@ -2,10 +2,9 @@
 
 import { createEffect, Signal } from '../reactive';
 import { screenRegistry } from './registry';
-import { ledgerGrid, selectedViewId, activeView } from '../ledger/grid-state';
+import { ledgerGrid, selectedCircuitId, activeCircuit } from '../ledger/grid-state';
 import { resolveKindAlias } from '../kinds/kinds-registry';
 import { h } from '../dom';
-
 
 export function mountLedgerScreen(container: HTMLElement): () => void {
   const selectedRowId = new Signal<string | null>(null);
@@ -17,7 +16,7 @@ export function mountLedgerScreen(container: HTMLElement): () => void {
 
   const layout = h('div', { style: 'display: flex; flex-direction: column; height: 100%; padding: 20px;' },
     h('div', { style: 'display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid var(--border-strong); padding-bottom: 10px; margin-bottom: 10px; flex: 0 0 auto;' },
-      h('h2', { style: 'margin: 0; color: var(--text-primary);', textContent: 'Circuit Ledger & Turn Audit Log' })
+      h('h2', { style: 'margin: 0; color: var(--text-primary);', textContent: 'Circuit Execution Ledger' })
     ),
     contentArea
   );
@@ -27,13 +26,14 @@ export function mountLedgerScreen(container: HTMLElement): () => void {
   createEffect(() => {
     const mode = viewMode.value;
     const rows = ledgerGrid.value;
-    const vId = selectedViewId.value;
-    
+    const cId = selectedCircuitId.value;
+    const circ = activeCircuit.value;
+
     contentArea.replaceChildren();
 
-    if (!vId) {
+    if (!cId || !circ) {
       contentArea.appendChild(h('div', { 
-        textContent: '🔒 Select an Active View to access its Ledger.', 
+        textContent: '🔒 Select an Active Circuit to access its Ledger.', 
         style: 'text-align: center; color: var(--text-muted); font-style: italic; padding: 30px;' 
       }));
       return;
@@ -41,7 +41,7 @@ export function mountLedgerScreen(container: HTMLElement): () => void {
 
     if (rows.length === 0) {
       contentArea.appendChild(h('div', { 
-        textContent: 'No execution turns or Phase Transition Records (PTRs) exist for this View yet.', 
+        textContent: `No execution turns or Phase Transition Records (PTRs) logged for ${circ.name} yet.`, 
         style: 'text-align: center; color: var(--text-muted); font-style: italic; padding: 30px;' 
       }));
       return;
@@ -86,9 +86,7 @@ export function mountLedgerScreen(container: HTMLElement): () => void {
       });
 
       contentArea.appendChild(h('div', { style: 'flex: 1; overflow: auto;' }, table));
-    } 
-    
-    else if (mode === 'detail') {
+    } else if (mode === 'detail') {
       const selectedRow = rows.find(r => r.id === selectedRowId.value);
       if (!selectedRow) return;
 
@@ -99,33 +97,14 @@ export function mountLedgerScreen(container: HTMLElement): () => void {
         on: { click: () => viewMode.value = 'grid' }
       });
 
-      const branchBtn = h('button', {
-        textContent: `⑃ Branch Braid Thread From Turn #${selectedRow.turnNumber}`,
-        style: 'background: var(--role-paradox); color: #fff; border: none; padding: 6px 12px; border-radius: 4px; font-weight: bold; cursor: pointer;',
-        on: { click: () => {
-          if (confirm(`Branch a new Braid thread from historical Turn #${selectedRow.turnNumber}.${selectedRow.seq}?`)) {
-            alert(`Thread severed cleanly. New branch initialized from Turn #${selectedRow.turnNumber}.`);
-          }
-        }}
-      });
-
       const alias = resolveKindAlias(selectedRow.kind);
 
-      const headerBlock = h('div', { style: 'display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px; padding-bottom: 10px; border-bottom: 1px dashed var(--border-strong);' },
-        h('h3', { style: 'margin: 0; color: var(--role-bridge);', textContent: `Ledger Entry [Turn #${selectedRow.turnNumber}.${selectedRow.seq} — ${alias}]` }),
-        branchBtn
-      );
-
-      const snapshotBox = h('div', { style: 'background: var(--bg-panel); padding: 12px; border-radius: 4px; border: 1px solid var(--border-subtle); margin-bottom: 15px; font-size: 0.85rem; font-family: var(--font-mono);' },
-        h('strong', { style: 'color: var(--text-secondary); display: block; margin-bottom: 6px;', textContent: 'Context Snapshot at Send:' }),
-        h('div', { textContent: `• Mode: ${selectedRow.warm ? 'WARM Continuation' : 'COLD Harness'}` }),
-        h('div', { textContent: `• Attached Documents: ${selectedRow.attachedDocIds?.length || 0} file(s)` }),
-        h('div', { textContent: `• Active Languages: ${selectedRow.activeLanguageIds?.length || 0} lexicon(s)` }),
-        h('div', { textContent: `• doc0 Length: ${selectedRow.doc0Snapshot?.length || 0} chars` })
+      const headerBlock = h('div', { style: 'margin-bottom: 15px; padding-bottom: 10px; border-bottom: 1px dashed var(--border-strong);' },
+        h('h3', { style: 'margin: 0; color: var(--role-bridge);', textContent: `Turn #${selectedRow.turnNumber}.${selectedRow.seq} — ${alias}` })
       );
 
       const detailWrapper = h('div', { style: 'padding: 20px; overflow-y: auto; flex: 1;' },
-        backBtn, headerBlock, snapshotBox,
+        backBtn, headerBlock,
         h('h4', { style: 'color: var(--text-secondary); margin-bottom: 6px;', textContent: 'Header Signature:' }),
         h('pre', { style: 'white-space: pre-wrap; background: var(--bg-deep); padding: 10px; border-radius: 4px; font-family: var(--font-mono); font-size: 0.85rem; margin-bottom: 15px;', textContent: selectedRow.header || '(No Header)' }),
         h('h4', { style: 'color: var(--text-secondary); margin-bottom: 6px;', textContent: 'Body Payload:' }),

@@ -2,8 +2,9 @@
 
 import { createEffect } from '../reactive';
 import { screenRegistry } from './registry';
-import { selectedDocumentId, worldDocumentsGrid, projectDocumentsGrid, activeProject, activeWorldConfig } from '../ledger/grid-state';
+import { selectedDocumentId, documentsGrid, refreshAllGrids } from '../ledger/grid-state';
 import { ledgerVfs } from '../ledger/vfs-wrapper';
+import { vfsDb } from '../ledger/fs';
 import { pushScreen } from '../router';
 import { h } from '../dom';
 
@@ -15,52 +16,37 @@ export function mountDocEditorScreen(container: HTMLElement): () => void {
     const docId = selectedDocumentId.value;
     layout.replaceChildren();
 
-    const allDocs = [...worldDocumentsGrid.value, ...projectDocumentsGrid.value];
-    const existingDoc = allDocs.find(d => d.id === docId);
-
+    const existingDoc = documentsGrid.value.find(d => d.id === docId);
     const isNew = !existingDoc || docId === 'new';
 
-    // Header Title: "Creating Document" when blank/new, else "Edit Document [SCOPE]"
-    const headerTitle = isNew ? 'Creating Document' : `Edit Document [${existingDoc.ownerScope.toUpperCase()}]`;
+    const dPayload = existingDoc?.documentData || {
+      content: existingDoc?.doc0 || '',
+      defaultA: true, defaultP: false, defaultU: false, defaultI: false, defaultR: false,
+      kind: 'source' as const
+    };
 
+    // 1. EDITABLE DOCUMENT HEADER CARD
     const titleInput = h('input', {
       value: existingDoc ? existingDoc.name : '',
-      placeholder: 'Document Name (e.g. System_Architecture.md)',
-      style: 'font-size: 1.1rem; font-weight: bold; width: 100%; margin-bottom: 15px;'
+      placeholder: 'Document Name (e.g. System_Architecture.md)...',
+      style: 'font-size: 1.2rem; font-weight: bold; width: 100%; margin-bottom: 8px;'
     });
 
-    const contentArea = h('textarea', {
-      value: existingDoc ? existingDoc.content : '',
-      placeholder: 'Enter document content here...',
-      style: 'flex: 1; width: 100%; font-family: var(--font-mono); font-size: 0.9rem; padding: 12px; resize: none; margin-bottom: 15px;'
+    const descInput = createAutosizingTextarea({
+      value: existingDoc?.description || '',
+      placeholder: 'Document Purpose / Description...',
+      style: 'width: 100%; min-height: 40px; margin-bottom: 12px; font-size: 0.85rem;'
     });
 
-    const defaultA = h('input', { type: 'checkbox', checked: existingDoc ? existingDoc.defaultA : true });
-    const defaultP = h('input', { type: 'checkbox', checked: existingDoc ? existingDoc.defaultP : false });
-    const defaultU = h('input', { type: 'checkbox', checked: existingDoc ? existingDoc.defaultU : false });
-    const defaultI = h('input', { type: 'checkbox', checked: existingDoc ? existingDoc.defaultI : false });
-    const defaultR = h('input', { type: 'checkbox', checked: existingDoc ? existingDoc.defaultR : false });
-
-    const saveStatus = h('span', { style: 'color: var(--health-clear); font-weight: bold; margin-left: 10px; display: none;' });
-
-    const saveBtn = h('button', {
-      textContent: isNew ? 'Create & Save Document' : 'Save Document',
+    const saveHeaderBtn = h('button', {
+      textContent: isNew ? 'Create Document Header' : 'Save Document Header',
       className: 'k4-btn-primary',
+      style: 'align-self: flex-start; margin-bottom: 15px;',
       on: { click: async () => {
         const name = titleInput.value.trim();
         if (!name) return alert('Please enter a document name.');
 
-        const proj = activeProject.peek();
-        const world = activeWorldConfig.peek();
-
-        const scope: 'world' | 'project' = existingDoc ? existingDoc.ownerScope : (proj ? 'project' : 'world');
-        const ownerId: string = existingDoc ? existingDoc.ownerId : (proj ? proj.id : (world ? world.id : ''));
-
-        if (!ownerId) return alert('No active Project or World selected to own this document.');
-
-        const savedDoc = await ledgerVfs.saveDocument(
-          scope,
-          ownerId,
+        const savedDocNode = await ledgerVfs.saveDocumentNode(
           name,
           contentArea.value,
           {
@@ -71,32 +57,76 @@ export function mountDocEditorScreen(container: HTMLElement): () => void {
             R: defaultR.checked
           },
           existingDoc ? existingDoc.id : undefined,
-          existingDoc ? existingDoc.kind : 'source'
+          dPayload.kind || 'source'
         );
 
-        selectedDocumentId.value = savedDoc.id;
-        saveStatus.textContent = isNew ? 'Created & Saved!' : 'Saved!';
-        saveStatus.style.display = 'inline';
-        setTimeout(() => saveStatus.style.display = 'none', 2000);
+        savedDocNode.description = descInput.value.trim();
+        await vfsDb.upsertCircuit(savedDocNode);
+        await refreshAllGrids();
+
+        selectedDocumentId.value = savedDocNode.id;
+        alert('Document header saved.');
+      }}
+    });
+
+    const headerCard = h('div', {
+      style: 'background: var(--bg-surface); padding: 15px; border-radius: 6px; border: 1px solid var(--border-strong); margin-bottom: 20px;'
+    },
+      h('label', { style: labelStyle, textContent: '📄 Document Name' }), titleInput,
+      h('label', { style: labelStyle, textContent: 'Document Purpose & Description' }), descInput,
+      saveHeaderBtn
+    );
+
+    // 2. DOCUMENT CONTENT EDITOR
+    const contentArea = createAutosizingTextarea({
+      value: dPayload.content || existingDoc?.doc0 || '',
+      placeholder: 'Enter document content here...',
+      style: 'flex: 1; width: 100%; font-family: var(--font-mono); font-size: 0.9rem; padding: 12px; min-height: 200px; margin-bottom: 15px;'
+    });
+
+    const defaultA = h('input', { type: 'checkbox', checked: dPayload.defaultA });
+    const defaultP = h('input', { type: 'checkbox', checked: dPayload.defaultP });
+    const defaultU = h('input', { type: 'checkbox', checked: dPayload.defaultU });
+    const defaultI = h('input', { type: 'checkbox', checked: dPayload.defaultI });
+    const defaultR = h('input', { type: 'checkbox', checked: dPayload.defaultR });
+
+    const saveContentBtn = h('button', {
+      textContent: 'Save Document Content',
+      className: 'k4-btn-primary',
+      on: { click: async () => {
+        const name = titleInput.value.trim();
+        if (!name) return alert('Please enter a document name.');
+
+        const savedDocNode = await ledgerVfs.saveDocumentNode(
+          name,
+          contentArea.value,
+          {
+            A: defaultA.checked,
+            P: defaultP.checked,
+            U: defaultU.checked,
+            I: defaultI.checked,
+            R: defaultR.checked
+          },
+          existingDoc ? existingDoc.id : undefined,
+          dPayload.kind || 'source'
+        );
+
+        selectedDocumentId.value = savedDocNode.id;
+        alert('Document content saved.');
       }}
     });
 
     const deleteBtn = isNew ? null : h('button', {
-      textContent: 'Delete Document',
-      style: 'background: var(--health-halted); color: #fff; border: none; padding: 6px 12px; border-radius: 4px; font-weight: bold; cursor: pointer;',
+      textContent: '🗑️ Delete Document',
+      style: 'background: var(--health-halted); color: #fff; border: none; padding: 6px 12px; border-radius: 4px; font-weight: bold; cursor: pointer; margin-left: 10px;',
       on: { click: async () => {
-        if (existingDoc && confirm(`Delete '${existingDoc.name}'?`)) {
+        if (existingDoc && confirm(`Move '${existingDoc.name}' to Trash?`)) {
           await ledgerVfs.deleteDocument(existingDoc.id);
           selectedDocumentId.value = 'new';
           pushScreen('documents');
         }
       }}
     });
-
-    const header = h('div', { style: 'display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid var(--border-strong); padding-bottom: 10px; margin-bottom: 15px;' },
-      h('h2', { style: 'margin: 0; color: var(--text-primary);', textContent: headerTitle }),
-      deleteBtn || h('span')
-    );
 
     const defaultsPanel = h('div', { style: 'display: flex; gap: 20px; align-items: center; background: var(--bg-surface); padding: 10px 15px; border-radius: 4px; border: 1px solid var(--border-subtle); margin-bottom: 15px;' },
       h('strong', { style: 'color: var(--text-secondary); font-size: 0.85rem;', textContent: 'Default Inclusion Flags:' }),
@@ -108,17 +138,29 @@ export function mountDocEditorScreen(container: HTMLElement): () => void {
     );
 
     layout.append(
-      header,
-      h('label', { style: 'font-weight: bold; color: var(--text-secondary); margin-bottom: 4px; display: block;', textContent: 'Document Name' }),
-      titleInput,
+      headerCard,
       defaultsPanel,
-      h('label', { style: 'font-weight: bold; color: var(--text-secondary); margin-bottom: 4px; display: block;', textContent: 'Content' }),
+      h('label', { style: 'font-weight: bold; color: var(--text-secondary); margin-bottom: 4px; display: block;', textContent: 'Document Body Content' }),
       contentArea,
-      h('div', { style: 'display: flex; align-items: center;' }, saveBtn, saveStatus)
+      h('div', { style: 'display: flex; align-items: center;' }, saveContentBtn, deleteBtn)
     );
   });
 
   return () => { container.innerHTML = ''; };
 }
 
-screenRegistry.register({ id: 'doc-editor', label: 'Doc Editor', order: 103, mount: mountDocEditorScreen });
+function createAutosizingTextarea(props: any): HTMLTextAreaElement {
+  const area = h('textarea', props) as HTMLTextAreaElement;
+  const autoResize = () => {
+    area.style.height = 'auto';
+    area.style.height = `${area.scrollHeight}px`;
+  };
+  area.addEventListener('input', autoResize);
+  setTimeout(autoResize, 0);
+  return area;
+}
+
+const labelStyle = 'font-weight: bold; color: var(--text-secondary); display: block; margin-bottom: 4px; font-size: 0.85rem;';
+
+screenRegistry.register({ id: 'doc-editor', label: 'Document Editor', order: 103, mount: mountDocEditorScreen });
+

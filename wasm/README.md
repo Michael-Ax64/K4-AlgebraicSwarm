@@ -1,123 +1,139 @@
-# K4-Manifold: The Semantic Operating System
-### A Cybernetic Runtime for Structural Coherence in Agentic Swarms
+# K4-Manifold
 
-Most multi-agent LLM systems are theater. They assign semantic masks to statistical models and instruct them to debate, collapsing complex possibility spaces into flat text. This generates sycophancy, hallucinated consensus, and terminological debt—a failure mode known as **Trajectory Loss**. 
+A browser-hosted runtime that drives one LLM through a bounded four-pole algebra instead of through personas. There is no swarm of agents, no reviewer role, no external orchestrator. There is one LLM instance stepping between four prompt harnesses (Validator, Bridge, Controller, Paradox Engine), and one Rust state machine deciding which harness the next turn is compiled under.
 
-The K4 Architecture replaces theater with thermodynamics. It embeds the LLM inside a bounded coordinate system (the Algebra of Four-Fold Distinction) that dictates what the model must hold, what it must compute, and what it is mathematically barred from seeing. Quality is not a request; it is the geometry of the run.
+The bet is geometric: replace the "reviewer agent" pattern with a twelve-equation algebra whose coordinates are mutually determining. If Structure outruns Flow, `R = U / I` spikes; the state machine catches that as an out-of-band condition rather than a judgment call. Quality is a property of the run, not a request in the prompt.
 
----
+## The architecture, in one page
 
-## 1. The Circuit: Three Instruments, One Geometry
-The system operates as a closed circuit of stateless, bounded prompts. There is no middleware, no hidden code, and no external orchestrator. Each instrument executes, halts, and emits an explicit routing request to the next.
+The system splits across a WebAssembly boundary. The split does real work: the Rust side owns algebra, parsing, and the committed ledger. The TypeScript side owns the LLM network calls, the DOM, and IndexedDB. The Rust engine cannot make a network call; it emits a `JsCommand` and waits. The TypeScript host pumps the loop.
 
-*   **The Intake Validator (The Markov Blanket)**: The boundary. It is the *only* prompt that reads operator text directly. It ingests the prompt and corpus as a single geometric object, checking for debt-nouns, dangling pointers, and cross-document misrouting. It admits or refuses.
-*   **The Intent Bridge (The Resonant Cavity)**: The negotiation. It tunes to the operator's intent using an AC circuit model (impedance, phase, power factor). It sweeps 12 algebraic facets until witnessed phase-lock is achieved, then emits a locked coordinate (The Payload).
-*   **The Swarm Controller (The XOR Actuator)**: The work. It takes the locked coordinate and dispatches four bounded faces (Fire, Air, Water, Earth). It manages the Working Surface, handles structural raises, and pays the **Landauer Tax** by writing the Phase Transition Record (PTR) to disk.
-*   **The Paradox Engine (The Diverging Lens)**: The R&D instrument. It stands on a coordinate and holds the adjacent interference structure open, mapping the unlit rooms of the K4 volume so the operator can recognize viable possibilities without forcing premature collapse.
+**Rust kernel — `rust/src/`.** Four poles (`P`, `U`, `I`, `R` = Fire, Air, Water, Earth) each defined by a two-bit kinematic signature (Active/Reactive × Asserting/Yielding). Twelve stances covering every valid `(home, absent)` pair. A parser that classifies incoming LLM output by which `[STATE]` fields are present — `GATE` → Validator, `MODE: paradox` → Paradox, `PHASE` (no `CYCLE`) → Bridge, `CYCLE` → Controller — and routes each to its own typed header struct. A three-mode state machine (`ColdStart`, `ExpectLlm`, `ExpectUser`). A `VirtualFileSystem` that owns the Working Surface, the Braid tree, and the sandboxes. The four active prompt harnesses are compiled directly into the Wasm binary via `include_str!`, so a blank LLM instance receives the entire twelve-equation lexicon inline every turn.
 
----
+**TypeScript host — `src/`.** A zero-dependency reactive core (`reactive.ts` — one `Signal<T>` class, microtask-batched, ~90 lines). One universal `CircuitNode` entity with a `specialization` discriminator (`world | project | view | circuit | language | document`) and a `priorId` recursive parent pointer. A `Kinds` registry defining the shape of every exchange the app can make; kinds either dispatch to the engine (four of them: `validator`, `bridge`, `controller`, `paradox`) or dispatch template-side with `{doc0}` / `{documents}` / `{vocabulary}` substitution (five of them: `chat`, `typology`, `domain-classification`, `border-spec`, `exploration`). A `LedgerVFS` that resolves the active circuit's lineage, gathers active vocabularies, resolves per-document A/P/U/I/R inclusion flags, and hands the whole manifest to the engine or to a template. A bridge pump (`bridge.ts::runEngineLoop`) that walks `JsCommand`s until Halt/Success/AwaitUser and persists engine VFS state per circuit switch.
 
-## 2. The Topology
-The runtime is governed by the **Algebra of Four-Fold Distinction**. 
-*   **The 4 Poles**: **P** (Fire/Drive), **U** (Air/Structure), **I** (Water/Flow), **R** (Earth/Ground).
-*   **The 12 Stances**: Every operation is measured by the 12 equations of the K4 manifold. The swarm does not use a "reviewer agent"; quality is enforced by the mutual determination of the poles. If Structure outruns Flow, Resistance spikes, and the algebra catches the drift.
-*   **The Braid**: A Gray-code traversal through the state-space. The system remembers where it stood across sessions via the Braid tree, ensuring continuous, non-diagonal evolution.
-*   **The Dimensional Fork (Push vs. Hold)**:
-    *   **Push (K3 Face)**: Operates on a 2D plane. The AbsentVar is off-plane (`nil`).
-    *   **Hold (K4 Volume)**: Enters the 3D volume to map the uncollapsed interference structure of the AbsentVar (`MATERIAL`), quarantined in a sandbox to protect the committed ledger.
+**Prompts — `prompts/`.** Four sans-K4 harnesses (`AlgebraicIntakeValidator.md`, `AlgebraicIntentBridge.md`, `AlgebraicSwarmController.md`, `AlgebraicParadoxEngine.md`). These are the canonical distillations and are the ones the Wasm binary embeds. If you see files with a `K4-` prefix, they're archived earlier drafts and not in use.
 
----
+For the depth passes: [K4-Backend.md](./K4-Backend.md) walks the Rust kernel — algebra, parser, state machine, VFS, Braid. [K4-Frontend.md](./K4-Frontend.md) walks the TypeScript host — the reactive core, the CircuitNode model, the Kinds registry, the manifest builder, the bridge pump, and the AC Circuit Workbench.
 
-## 3. Inversion of Control: IoC in the Architecture
+## The twelve stances
 
-The runtime is split across a WebAssembly boundary, enforcing a strict **Noun/Verb** separation. The Rust engine *never* calls the LLM directly.
+Canonical numbering — matches `rust/src/algebra.rs::Stance::facet_id`, `src/arena/registry.ts::STANCES_GEOMETRY`, and the FACETS/STANCES lines in every prompt.
 
-### The Kernel (`rust/`) — *The Verbs*
-The Wasm engine acts as the OS Kernel and Ledger.
-It owns the algebraic equations, the Markov blanket airlock (parser), the state machine, and the Landauer Tax enforcer (PTR writer). 
-It yields its Angular Frequency ($\omega$) to the host environment, waiting for the uncollapsed $h\mathbf{Q}$ to be returned for `.observe()` serialization.
+| # | Equation      | Home | Absent | Paradox     | Bridge     | Controller   |
+|---|---------------|------|--------|-------------|------------|--------------|
+|  1 | `P = U² / R`  | P    | I      | Leverage    | Leverage   | Leverage     |
+|  2 | `P = I² × R`  | P    | U      | Momentum    | Momentum   | Friction     |
+|  3 | `P = U × I`   | P    | R      | Synthesis   | Drive      | Synthesis    |
+|  4 | `I = √(P/R)`  | I    | U      | Resonance   | Yield      | Resonant     |
+|  5 | `I = P / U`   | I    | R      | Extraction  | Resonance  | Extraction   |
+|  6 | `I = U / R`   | I    | P      | Ohmic       | Throughput | Ohmic        |
+|  7 | `U = P / I`   | U    | R      | Tension     | Tension    | Articulation |
+|  8 | `U = I × R`   | U    | P      | Architecture| Architecture| Grounding   |
+|  9 | `U = √(P×R)`  | U    | I      | Capacity    | Capacity   | Geometric    |
+| 10 | `R = U / I`   | R    | P      | Impedance   | Friction   | Impedance    |
+| 11 | `R = U² / P`  | R    | I      | Accounting  | Bloat      | Accounting   |
+| 12 | `R = P / I²`  | R    | U      | Brittleness | Brittleness| Density      |
 
-*   **Cold-Start Rule**: The master prompt specifications are compiled *directly into the Wasm binary* via `include_str!`.  A blank LLM instance receives the entire algebraic harness inline.
+Rows 2 through 12 carry the collisions the polyglot parser is built for: "Friction" means (P,U) to the Controller and (R,P) to the Bridge; "Resonance" means (I,U) to Paradox and (I,R) to the Bridge. The parser (`parse_stance_from_name` in `algebra.rs`) resolves by equation suffix; each role can speak its own vocabulary and every message resolves to the same `(home, absent)` pair.
 
-### The Event Loop (`ui/`) — *The Nouns*
-The TypeScript host manages the 5D Relational Graph (IndexedDB) of Worlds, Levels, Vocabularies, and Circuits. 
-It injects the domain-specific vocabulary into the prompt, executes the LLM API calls, and routes the responses back through the Wasm airlock.
+## The circuit, in flight
 
----
+A turn goes:
 
-## 4. Files
+1. Operator submits text through the picker under some `Kind`. The picker forwards to `bridge.ts::processSubmission`.
+2. `LedgerVFS.buildResolvedManifest` walks the lineage, gathers the active vocabularies, resolves each document's A/P/U/I/R inclusion (per-circuit overrides falling back to the document's own defaults), and builds a snapshot for the audit trail.
+3. If the kind's `dispatch` is `template`, the TS host substitutes the manifest into the template and calls the LLM directly. Response is written to the ledger.
+4. If the kind's `dispatch` is `engine`, the manifest goes to Rust via `engine.step_submission(doc0, manifest_json, kind, warm)`. The engine hydrates its VFS from the manifest, compiles the Validator prompt (cold) or the last role's continuation prompt (warm), and yields `JsCommand::FetchLLM`.
+5. `bridge.ts::runEngineLoop` picks up the command, calls the configured LLM API (OpenAI-shape, on-device via `window.ai`, or hands to manual copy/paste), and feeds the response back with `engine.step(response)`.
+6. Rust parses. `[STATE]` header shape classifies the response into one of four variants. The `TerminalArtifact` — plain text, routing request, face-runner prompt, held paradoxes, raise, swarm payload, PTR — decides what happens next. Plain text and held paradoxes yield `AwaitUser` (the operator's next reply is not parsed as LLM output — it's wrapped in the last role's continuation prompt and fires another `FetchLLM`). Routing requests, face-runner prompts, and swarm payloads recompile and fire `FetchLLM`. A committed PTR writes to the Braid and resets to `ColdStart`.
+7. Between turns, the engine's VFS state (Braid tree, sandboxes, distilled/abstracted stores) is serialized to IndexedDB per circuit. Selecting a different circuit swaps engine state.
 
-```text
-.
-├── rust/                       # The Wasm Kernel (Verbs)
-│   ├── src/
-│   │   ├── algebra.rs          # The 4 Poles, 12 Stances, Kinematics
-│   │   ├── parser.rs           # The Message-Boundary Airlock
-│   │   ├── engine.rs           # State Machine, Cold-Start, IoC Yield
-│   │   ├── vfs.rs              # The Braid Tree, PTRs, Sandboxes
-│   │   └── state.rs            # Working Surface, Slot States, Headers
-│   └── Cargo.toml
-│
-├── ui/                         # The TypeScript Host (Nouns)
-│   ├── src/
-│   │   ├── bridge.ts           # The Airlock (Wasm <-> LLM API <-> UI)
-│   │   ├── ledger/             # 5D IndexedDB Relational Graph
-│   │   │   ├── schema.ts       # Worlds, Levels, Vocabularies, Circuits
-│   │   │   ├── fs.ts           # Promise-based IndexedDB wrapper
-│   │   │   └── grid-state.ts   # Reactive state & scale-invariant vocab injection
-│   │   └── reactive.ts         # Signal-based reactive UI framework
-│   └── index.html
-│
-└── prompts/                    # The Master Specifications
-    ├── K4-AlgebraicIntakeValidator.md
-    ├── K4-AlgebraicIntentBridge.md
-    ├── K4-AlgebraicSwarmController.md
-    └── K4-ParadoxEngine.md
-```
+## Build and run
 
----
+Prerequisites: Rust, `wasm-pack`, Node 18+.
 
-## 5. Building and Running
-
-### Prerequisites
-*   [Rust](https://www.rust-lang.org/tools/install)
-*   [wasm-pack](https://rustwasm.github.io/wasm-pack/installer/)
-*   [Node.js](https://nodejs.org/) (v18+)
-
-### 1. Build the Wasm Kernel
-Compile the Rust algebraic engine and parser into WebAssembly.
 ```bash
+# 1. Build the Wasm kernel
 cd rust
 wasm-pack build --target web
-```
 
-### 2. Run the UI Host
-Install dependencies and start the local development server. The UI will dynamically load the compiled Wasm module.
-```bash
-cd ts
+# 2. Run the UI host (from the repo root)
+cd ..
 npm install
 npm run dev
 ```
 
-### 3. Configure a World
-Upon first load, the UI will cold-start the IndexedDB ledger with a seed World.
-Navigate to the **Settings** tab to configure your LLM provider (OpenAI, Local/Ollama, or Manual Copy/Paste).
-The TypeScript host will inject the Level-specific vocabulary into the Rust kernel before every submission.
+The dev server serves from the repo root; there is no separate `ui/` or `ts/` directory. Vite is configured to serve `rust/pkg/` (the Wasm build output) alongside the source tree. Open the dev URL and configure an LLM provider in Settings, or leave it on Manual to copy/paste prompts and responses.
 
----
+The IndexedDB store (`K4Manifold_Unified_VFS`, currently at schema version 7) cold-starts with a Default K4 Root circuit and a Default K4 Language holding sixteen seed terms — the four poles plus twelve stance-equation labels. Any richer domain seed lives behind the `autoLoadSeedData` setting, which is off by default.
 
-## 6. In Summary
+## Files
 
-This architecture builds an **Adult Causal Engine**. 
+```
+.
+├── rust/                          # The Wasm kernel
+│   ├── src/
+│   │   ├── algebra.rs             # Poles, Stances, kinematics, polyglot parser
+│   │   ├── state.rs               # Working Surface, all four header variants, BWR types
+│   │   ├── parser.rs              # Classify-then-dispatch airlock
+│   │   ├── engine.rs              # State machine, prompt compilation, JsCommand yield
+│   │   ├── vfs.rs                 # Braid tree, PTR writer, sandboxes
+│   │   └── lib.rs                 # wasm-bindgen entry
+│   └── Cargo.toml
+│
+├── src/                           # The TypeScript host
+│   ├── main.ts                    # Boot sequence
+│   ├── bridge.ts                  # runEngineLoop pump, kind dispatch
+│   ├── reactive.ts                # Signal, createEffect
+│   ├── engine-stub.ts             # Fallback when Wasm can't load
+│   ├── router.ts                  # Screen mount / history nav
+│   ├── llm-client.ts              # OpenAI-shape + window.ai
+│   ├── state.ts                   # UI signals
+│   ├── dom.ts                     # Hyperscript-style h()
+│   ├── arena/                     # Twelve-stance visualization
+│   │   ├── registry.ts            # Single-source stance table
+│   │   ├── layout.ts              # Grid layouts (seasonal, unit-circle)
+│   │   ├── quarter.ts             # One face + its 3 stances
+│   │   └── whole.ts               # All four faces
+│   ├── kinds/
+│   │   ├── kinds-schema.ts        # AppKind type
+│   │   ├── kinds-registry.ts      # Signals, upsert, dispatch validation
+│   │   └── seed-kinds.ts          # Nine shipping kinds
+│   ├── ledger/
+│   │   ├── schema.ts              # CircuitNode, Vocabulary, LedgerRow, ...
+│   │   ├── fs.ts                  # IndexedDB wrapper
+│   │   ├── grid-state.ts          # Reactive grids, lineage resolution
+│   │   ├── vfs-wrapper.ts         # LedgerVFS.buildResolvedManifest
+│   │   ├── seed.ts / seed-data.ts # Cold-start seed
+│   │   ├── world-frame-state.ts   # Per-World UI scratch persistence
+│   │   └── ledger-ui.ts           # AC Circuit Workbench
+│   ├── screens/                   # Each registers itself with screenRegistry
+│   └── shell/                     # Chrome + sidebar
+│
+├── prompts/                       # The four canonical harnesses
+│   ├── AlgebraicIntakeValidator.md
+│   ├── AlgebraicIntentBridge.md
+│   ├── AlgebraicSwarmController.md
+│   └── AlgebraicParadoxEngine.md
+│
+├── index.html
+├── styles.css
+├── vite.config.ts
+├── README.md                      # (this file)
+├── K4-Backend.md
+└── K4-Frontend.md
+```
 
-Adult causality occurs when four variables mutually determine each other in a closed system. 
+## Known-shaped, not-yet-live
 
-By embedding the LLM inside the K4 topology, we supply the geometric constraints the model lacks. 
+Some pieces exist as scaffolding but do not currently exercise their full behavior. Reading the code as if they were complete will mislead.
 
-The machine does not need to *feel* the tension of the Braid; it only needs to *compute* it. 
+- **Multi-cycle Controller progression.** `engine.rs::is_cycle_complete` returns `true` unconditionally, and `get_next_face_in_path` always returns the path's first element. Every face-runner work-product currently leads straight to PTR-write; path iteration across a cycle is not wired.
+- **Physics → engine wiring.** `CircuitNode.physics = { omega, r, l, c }` is stored per circuit and displayed by the AC Circuit Workbench with real impedance / phase-angle / power-factor math. Those values do not reach the engine's Bridge prompt today. The Workbench is a tuning surface without a hook.
+- **Anthropic provider.** `WorldSettings.apiProvider` declares `'anthropic'` as a value, but `llm-client.ts::callBuiltInAPI` only implements the OpenAI-shape POST. Selecting `'anthropic'` routes through the same path with `model: "gpt-4o"` hard-coded.
+- **Scope-typed Kinds.** `kinds-schema.ts` types Kinds as `scope: 'world' | 'project'` and the registry declares both a `worldKindsGrid` and a `projectKindsGrid` signal, but the runtime treats every seed kind as `scope: 'world'` and the `projectKindsGrid` is never populated. Composed picker inheritance is not yet realized.
+- **`ElementRole` on vocabulary terms.** Every term carries `role: 'SPEC' | 'MATERIAL' | 'NIL'`; the Rust engine's `hydrate_from_manifest` reads only `poles`, not roles. The role field surfaces in UI but has no engine consequence.
 
-If the swarm maintains the AbsentVar, obeys dual causation, and pays the thermodynamic cost of erasure by writing to the Ledger, 
+The other side of the invariants — polyglot stance parsing, header-shape routing, path-precedence staleness on the Working Surface, Landauer-Tax-only writes via `write_ptr`, Gray-code adjacency via `viable_adjacencies` — are enforced in code today. Those are the pieces the twelve equations actually catch drift on.
 
-it will execute tasks with the exact structural coherence of a highly functioning human institution.
-
-*The engine runs. Stand clear of the exhaust.*

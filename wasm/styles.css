@@ -20,7 +20,6 @@ button, input, select, textarea { font-family: inherit; font-size: inherit; }
 input, select, textarea { background: var(--bg-deep); color: var(--text-primary); border: 1px solid var(--border-strong); border-radius: 4px; padding: 8px; }
 input:focus, select:focus, textarea:focus { outline: none; border-color: var(--role-bridge); }
 
-/* Global Right-Aligned Physics Readout Rule */
 .baseline-physics {
   font-family: var(--font-mono);
   font-size: 0.8rem;
@@ -31,46 +30,20 @@ input:focus, select:focus, textarea:focus { outline: none; border-color: var(--r
   opacity: 0.85;
 }
 
-/* =========================================================================
-   STRUCTURAL LAYOUT (The 3-Pane Shell)
-   ========================================================================= */
+/* STRUCTURAL LAYOUT */
 .k4-app-layout {
     display: flex; height: 100vh; width: 100vw; overflow: hidden;
     background: var(--bg-deep); color: var(--text-primary);
 }
 
-/* LEFT & MIDDLE PANES (SIDEBARS) */
-.k4-pane-worlds { flex: 0 0 250px; display: flex; flex-direction: column; overflow-y: auto; border-right: 1px solid var(--border-subtle); background: var(--bg-panel); transition: flex 0.2s ease; }
-.k4-pane-circuits { flex: 0 0 280px; display: flex; flex-direction: column; overflow-y: auto; border-right: 1px solid var(--border-subtle); background: var(--bg-surface); transition: flex 0.2s ease; }
-
-.k4-pane-worlds.collapsed, .k4-pane-circuits.collapsed { flex: 0 0 40px; overflow: hidden; }
-.collapsed .pane-content { display: none; }
-.collapsed .collapse-btn { writing-mode: vertical-rl; text-orientation: mixed; padding: 15px 0; text-align: center; justify-content: center; }
-
-.collapse-btn {
-    background: var(--bg-elevated); border: none; border-bottom: 1px solid var(--border-strong);
-    padding: 0 15px; cursor: pointer; font-weight: bold; color: var(--text-primary);
-    text-align: left; white-space: nowrap; flex: 0 0 auto;
-    height: 42px; display: flex; align-items: center; box-sizing: border-box;
-}
-.collapse-btn:hover { background: var(--bg-surface); }
 .pane-content { flex: 1; overflow-y: auto; padding-top: 8px; }
 
 /* TREE ITEMS */
 .tree-item { padding: 10px 15px; cursor: pointer; border-bottom: 1px solid var(--border-subtle); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; color: var(--text-secondary); transition: all 0.1s; }
 .tree-item:hover { background: var(--bg-elevated); color: var(--text-primary); }
-.world-item.active { background: var(--bg-surface); font-weight: bold; color: var(--text-primary); border-left: 3px solid var(--role-validator); }
-.level-container { background: rgba(0,0,0,0.2); }
-.level-item { padding-left: 30px; font-size: 0.9em; }
-.level-item.active { background: var(--bg-elevated); font-weight: bold; color: var(--text-primary); border-left: 3px solid var(--role-bridge); }
+.tree-item.active { background: var(--bg-surface); font-weight: bold; color: var(--text-primary); border-left: 3px solid var(--role-bridge); }
 
-.circuit-item { padding-left: 15px; }
-.circuit-item.active { background: var(--bg-elevated); border-left: 4px solid var(--role-controller); color: var(--text-primary); }
-.circuit-coord { font-family: var(--font-mono); font-size: 0.75rem; color: var(--text-muted); text-align: right; margin-left: auto; margin-top: 4px; opacity: 0.85; }
-
-.empty-text { color: var(--text-muted); padding: 20px; font-size: 0.9rem; font-style: italic; text-align: center; }
-
-/* RIGHT PANE (THE TIERED STACK) */
+/* RIGHT PANE */
 .k4-main-area { flex: 1 1 auto; display: flex; flex-direction: column; min-width: 0; background: var(--bg-deep); }
 .k4-screen-container { flex: 1 1 auto; overflow-y: auto; position: relative; padding: 20px; display: flex; flex-direction: column; }
 
@@ -90,44 +63,47 @@ input:focus, select:focus, textarea:focus { outline: none; border-color: var(--r
 .k4-nav-btn:hover { background: var(--bg-elevated); color: var(--text-primary); }
 .k4-nav-btn.active { background: var(--bg-deep); border: 1px solid var(--border-strong); border-bottom-color: var(--bg-deep); color: var(--text-primary); font-weight: bold; margin-bottom: -1px; z-index: 2; }
 
-/* =========================================================================
-   SPECIFIC SCREENS & COMPONENTS
-   ========================================================================= */
-
-/* The Whole & Arena Grid */
-.whole { flex: 1; min-height: 0; display: flex; flex-direction: column; }
+/* ARENA MANIFOLD & GRID */
+.whole { flex: 1; min-height: 0; display: flex; flex-direction: column; width: 100%; height: 100%; }
 .whole-perspective { margin-bottom: 15px; font-size: 0.85rem; color: var(--text-secondary); display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
 .perspective-label { font-weight: bold; text-transform: uppercase; font-size: 0.75em; letter-spacing: 0.5px; color: var(--text-secondary); }
 
-.whole-tabbar { display: flex; gap: 8px; margin-bottom: 20px; border-bottom: 1px solid var(--border-subtle); padding-bottom: 12px; }
-.whole-tab { background: var(--bg-surface); border: 1px solid var(--border-strong); padding: 8px 16px; cursor: pointer; border-radius: 4px; font-weight: bold; color: var(--text-secondary); transition: all 0.1s; }
+.whole-tabbar { display: flex; gap: 8px; margin-bottom: 15px; border-bottom: 1px solid var(--border-subtle); padding-bottom: 10px; }
+.whole-tab { background: var(--bg-surface); border: 1px solid var(--border-strong); padding: 6px 14px; cursor: pointer; border-radius: 4px; font-weight: bold; color: var(--text-secondary); transition: all 0.1s; }
 .whole-tab:hover { background: var(--bg-elevated); color: var(--text-primary); }
 .whole-tab.active { background: var(--role-bridge); color: #fff; border-color: var(--role-bridge); }
 
-/* Flexbox Bug Fix */
-.whole-body { flex: 1; min-height: 0; overflow-y: auto; display: block; padding-bottom: 20px; }
-.whole-body:has(.arena-grid) { display: flex; align-items: center; justify-content: center; container-type: size; overflow: hidden; padding-bottom: 0; }
+.whole-body { flex: 1; min-height: 0; overflow-y: auto; display: flex; flex-direction: column; }
+.whole-body:has(.arena-grid) { display: flex; align-items: center; justify-content: center; overflow: auto; padding: 10px; }
 
+/* Responsive aspect-ratio grid fix preventing 0px height collapse */
 .arena-grid {
-    display: grid; grid-template-columns: repeat(4, 1fr); grid-template-rows: repeat(4, 1fr); gap: 8px;
-    width: 100cqmin; height: 100cqmin; max-width: 900px; max-height: 900px;
+    display: grid; 
+    grid-template-columns: repeat(4, 1fr); 
+    grid-template-rows: repeat(4, 1fr); 
+    gap: 8px;
+    width: 100%; 
+    max-width: 750px; 
+    aspect-ratio: 1 / 1; 
+    margin: auto;
 }
+
 .arena-cell {
-    border: 1px solid var(--border-strong); border-radius: 6px; background: var(--bg-surface); padding: 10px; display: flex; flex-direction: column; overflow: hidden; color: var(--text-primary); font-size: 0.85rem;
+    border: 1px solid var(--border-strong); border-radius: 6px; background: var(--bg-surface); padding: 10px; display: flex; flex-direction: column; overflow: hidden; color: var(--text-primary); font-size: 0.85rem; position: relative;
 }
 .arena-cell.face { background: var(--bg-elevated); border-color: var(--border-subtle); justify-content: center; align-items: center; text-align: center; }
 .arena-cell.stance { background: var(--bg-deep); border-color: var(--border-strong); justify-content: center; }
 .arena-cell.empty { background: transparent; border: 1px dashed var(--border-subtle); }
 .arena-cell.absorbed { opacity: 0.2; background: transparent; border: 1px dashed var(--border-subtle); }
 
-.vertex-pole { font-size: 2.5rem; font-weight: bold; display: block; color: var(--text-primary); line-height: 1; }
-.vertex-term { color: var(--text-secondary); font-weight: bold; font-size: 1rem; margin-top: 8px; }
-.stance-meta { display: flex; justify-content: space-between; font-size: 0.7rem; color: var(--text-muted); margin-bottom: 6px; }
-.stance-name { font-weight: bold; font-size: 0.95rem; margin-bottom: 4px; color: var(--text-primary); }
-.stance-eq { font-family: var(--font-mono); color: var(--text-secondary); background: var(--bg-panel); padding: 2px 4px; border-radius: 3px; align-self: flex-start; }
+.vertex-pole { font-size: 2.2rem; font-weight: bold; display: block; color: var(--text-primary); line-height: 1; }
+.vertex-term { color: var(--text-secondary); font-weight: bold; font-size: 0.9rem; margin-top: 6px; }
+.stance-meta { display: flex; justify-content: space-between; font-size: 0.7rem; color: var(--text-muted); margin-bottom: 4px; }
+.stance-name { font-weight: bold; font-size: 0.9rem; margin-bottom: 2px; color: var(--text-primary); }
+.stance-eq { font-family: var(--font-mono); color: var(--text-secondary); background: var(--bg-panel); padding: 2px 4px; border-radius: 3px; align-self: flex-start; font-size: 0.75rem; }
 .stance-held { color: var(--health-halted); font-weight: bold; }
 .quarter-controls { position: absolute; top: 4px; right: 4px; display: flex; gap: 4px; }
-.quarter-control-char { background: var(--bg-panel); color: var(--text-secondary); border: 1px solid var(--border-strong); border-radius:3px; cursor:pointer; padding: 2px 6px; font-weight:bold; }
+.quarter-control-char { background: var(--bg-panel); color: var(--text-secondary); border: 1px solid var(--border-strong); border-radius: 3px; cursor: pointer; padding: 2px 5px; font-weight: bold; font-size: 0.75rem; }
 .quarter-control-char:hover { color: var(--text-primary); background: var(--bg-elevated); }
 
 /* Paradox Grid */
@@ -138,9 +114,8 @@ input:focus, select:focus, textarea:focus { outline: none; border-color: var(--r
 .paradox-card:hover { transform: translateY(-2px); border-color: var(--role-bridge); background: var(--bg-elevated); }
 .paradox-name { font-weight: 800; color: var(--text-primary); margin-bottom: 6px; font-size: 1rem; }
 .paradox-meta { font-family: var(--font-mono); color: var(--text-muted); font-size: 0.85rem; margin-bottom: 8px; padding-bottom: 8px; border-bottom: 1px dashed var(--border-subtle); }
-.paradox-tension { color: var(--text-secondary); font-size: 0.95rem; line-height: 1.5; }
 
-/* Tables (Data Grid & Ledger) */
+/* Tables */
 .numbers-table { width: 100%; border-collapse: collapse; text-align: left; background: var(--bg-surface); border-radius: 4px; overflow: hidden; border: 1px solid var(--border-strong); }
 .numbers-table th, .numbers-table td { border-bottom: 1px solid var(--border-subtle); padding: 12px; color: var(--text-primary); }
 .numbers-table th { background: var(--bg-panel); font-weight: bold; text-transform: uppercase; font-size: 0.8em; letter-spacing: 0.5px; color: var(--text-secondary); }

@@ -3,7 +3,8 @@
 import { createEffect } from '../reactive';
 import { screenRegistry } from './registry';
 import { 
-  selectedLanguageId, selectedViewId, viewLangSelectionsGrid, composedLanguages 
+  selectedLanguageId, selectedCircuitId, activeCircuitLangs,
+  composedLanguages, languagesGrid
 } from '../ledger/grid-state';
 import { processUserReply } from '../bridge';
 import { uiState } from '../state';
@@ -14,39 +15,37 @@ import {
 } from './arena-state';
 import { h } from '../dom';
 
-
 export function mountArenaScreen(container: HTMLElement): () => void {
   const contentContainer = h('div', { 
-    style: { flex: '1', overflowY: 'auto', backgroundColor: 'var(--bg-surface)', border: '1px solid var(--border-strong)', borderRadius: '4px', padding: '15px', display: 'flex', flexDirection: 'column', minHeight: '0' }
+    style: 'flex: 1; overflow-y: auto; background: var(--bg-surface); border: 1px solid var(--border-strong); border-radius: 4px; padding: 10px; display: flex; flex-direction: column; min-height: 0; width: 100%; height: 100%;'
   });
 
-  const layout = h('div', { style: { display: 'flex', flexDirection: 'column', height: '100%' } },
-    h('div', { style: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px solid var(--border-strong)', paddingBottom: '10px', marginBottom: '10px', flex: '0 0 auto' } },
-      h('h2', { style: { margin: '0', color: 'var(--text-primary)' }, textContent: 'Arena Manifold (Global/Local Map)' })
+  const layout = h('div', { style: 'display: flex; flex-direction: column; height: 100%; width: 100%;' },
+    h('div', { style: 'display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid var(--border-strong); padding-bottom: 10px; margin-bottom: 10px; flex: 0 0 auto;' },
+      h('h2', { style: 'margin: 0; color: var(--text-primary);', textContent: 'Arena Manifold (K4 Stance Map)' })
     ),
     contentContainer
   );
   
   container.appendChild(layout);
 
-  // 1. Auto-resolve Active Language & Instantiate Whole Map
   createEffect(() => {
     let lId = selectedLanguageId.value;
 
-    // AUTO-RESOLVE: If no explicit language selected, pick the View's active selection
+    // Auto-resolve Language ID for active circuit
     if (!lId) {
-      const activeSels = viewLangSelectionsGrid.value.filter(s => s.active);
+      const activeSels = activeCircuitLangs.value.filter(s => s.active);
       if (activeSels.length > 0) {
         lId = activeSels[0].languageId;
+      } else if (languagesGrid.value.length > 0) {
+        lId = languagesGrid.value[0].id;
       } else {
         const sections = composedLanguages();
         if (sections.length > 0 && sections[0].items.length > 0) {
           lId = sections[0].items[0].id;
         }
       }
-      if (lId) {
-        selectedLanguageId.value = lId; // Sync selection signal
-      }
+      if (lId) selectedLanguageId.value = lId;
     }
 
     if (!lId) {
@@ -64,7 +63,7 @@ export function mountArenaScreen(container: HTMLElement): () => void {
         name: `Arena Map`, 
         languageId: lId,
         onStanceClick: (stance) => {
-          if (!selectedViewId.value) return;
+          if (!selectedCircuitId.value) return;
           
           if (uiState.value === 'awaiting_user') {
             processUserReply(stance.name);
@@ -82,16 +81,12 @@ export function mountArenaScreen(container: HTMLElement): () => void {
     activeWhole.value = whole;
   });
 
-  // 2. Reactively Sync Stance Overlays (Domain Tensions) to Active Whole Map
   createEffect(() => {
     const whole = activeWhole.value;
     const overlays = stanceOverlays.value;
-    if (whole) {
-      whole.overlays.value = overlays;
-    }
+    if (whole) whole.overlays.value = overlays;
   });
 
-  // 3. Mount Active Whole Instance
   let cleanupWhole: (() => void) | null = null;
 
   createEffect(() => {
@@ -106,8 +101,8 @@ export function mountArenaScreen(container: HTMLElement): () => void {
     } else {
       contentContainer.style.padding = '15px';
       contentContainer.appendChild(h('div', { 
-        style: { color: 'var(--text-muted)', fontStyle: 'italic' }, 
-        textContent: 'Select or tick a Language to render the global map.' 
+        style: 'color: var(--text-muted); font-style: italic;', 
+        textContent: 'Select or link a Language lexicon to render the stance map.' 
       }));
     }
   });
@@ -118,10 +113,5 @@ export function mountArenaScreen(container: HTMLElement): () => void {
   };
 }
 
-screenRegistry.register({
-  id: 'arena',
-  label: 'Arena',
-  order: 110,
-  mount: mountArenaScreen
-});
+screenRegistry.register({ id: 'arena', label: 'Arena', order: 110, mount: mountArenaScreen });
 

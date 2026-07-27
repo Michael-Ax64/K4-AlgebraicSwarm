@@ -1,112 +1,216 @@
 // wasm/src/screens/circuit.ts
 
-import { createEffect, Signal } from '../reactive';
+import { createEffect } from '../reactive';
 import { screenRegistry } from './registry';
-import { selectedViewId, circuitGrid } from '../ledger/grid-state';
+import {
+  activeCircuit, selectedCircuitId, circuitsGrid,
+  startRehoming, resolveCircuitLineage,
+  purgeCircuitPermanent, refreshAllGrids, activeSovereignSpace
+} from '../ledger/grid-state';
 import { vfsDb } from '../ledger/fs';
+import { CircuitNode, CircuitSpecialization, K4Pole } from '../ledger/schema';
 import { h } from '../dom';
 
+const POLES: K4Pole[] = ['P', 'I', 'U', 'R'];
+
 export function mountCircuitScreen(container: HTMLElement): () => void {
-    const selectedListId = new Signal<string | null>(null);
+  const layout = h('div', { style: 'padding: 20px; max-width: 650px; overflow-y: auto; height: 100%;' });
+  container.appendChild(layout);
 
-    const listPane = h('div', { style: 'flex: 0 0 280px; background: var(--bg-panel); border-right: 1px solid var(--border-strong); overflow-y: auto; display: flex; flex-direction: column;' });
-    const editorPane = h('div', { style: 'flex: 1; padding: 20px; overflow-y: auto; background: var(--bg-deep);' });
-    
-    const layout = h('div', { style: 'display: flex; height: 100%; width: 100%;' }, listPane, editorPane);
-    container.appendChild(layout);
+  let currentRenderedCircuitId: string | null = null;
 
-    // --- LIST PANE ---
-    createEffect(() => {
-        const circuits = circuitGrid.value;
-        const vId = selectedViewId.value;
-        const activeId = selectedListId.value;
+  createEffect(() => {
+    const c = activeCircuit.value;
+    const allCircuits = circuitsGrid.value;
 
-        listPane.replaceChildren();
+    if (!c) {
+      currentRenderedCircuitId = null;
+      layout.replaceChildren(h('div', {
+        style: 'margin-top: 40px; color: var(--text-muted); font-style: italic; text-align: center;',
+        textContent: 'Select a Circuit from the context graph.'
+      }));
+      return;
+    }
 
-        const addBtn = h('button', { textContent: '+ New Circuit Profile', className: 'k4-btn-primary', style: 'margin: 10px; width: calc(100% - 20px);' });
-        addBtn.addEventListener('click', () => selectedListId.value = 'new');
-        listPane.appendChild(addBtn);
+    if (currentRenderedCircuitId !== c.id) {
+      currentRenderedCircuitId = c.id;
+      layout.replaceChildren();
 
-        if (circuits.length === 0) {
-            listPane.appendChild(h('div', { style: 'padding: 20px; color: var(--text-muted); font-style: italic; text-align: center;', textContent: 'No tuning profiles exist for this View.' }));
-        } else {
-            circuits.forEach(c => {
-                const item = h('div', {
-                    className: `tree-item circuit-item ${c.id === activeId ? 'active' : ''}`,
-                    style: 'padding: 12px 15px;',
-                    on: { click: () => selectedListId.value = c.id }
-                },
-                    h('div', { style: 'font-weight:bold; margin-bottom: 4px; color: var(--text-primary); white-space: normal;', textContent: c.name }),
-                    h('div', { className: 'circuit-coord', textContent: `⌖ ω${c.omega}:R${c.r}:L${c.l}:C${c.c}` })
-                );
-                listPane.appendChild(item);
-            });
+      // Trash Banner
+      const trashBannerHost = h('div', {});
+      resolveCircuitLineage(c.id).then(({ lineage }) => {
+        const trashedAncestor = lineage.find(node => node.priorId === '__TRASH__');
+        const isTrashed = c.priorId === '__TRASH__' || !!trashedAncestor;
+
+        if (isTrashed) {
+          const isDirect = c.priorId === '__TRASH__';
+          const causeText = isDirect 
+            ? 'This item was moved to Trash.' 
+            : `This item is in Trash because ancestor '${trashedAncestor?.name}' is in Trash.`;
+
+          const restoreBtn = h('button', {
+            textContent: '↺ Restore to Root',
+            style: 'background: var(--role-bridge); color: #fff; border: none; padding: 6px 12px; border-radius: 3px; font-weight: bold; cursor: pointer;',
+            on: { click: async () => {
+              c.priorId = null;
+              c.updatedAt = Date.now();
+              await vfsDb.upsertCircuit(c);
+              await refreshAllGrids();
+            }}
+          });
+
+          const rehomeActionBtn = h('button', {
+            textContent: '⇄ Re-Home Elsewhere',
+            style: 'background: var(--role-paradox); color: #fff; border: none; padding: 6px 12px; border-radius: 3px; font-weight: bold; cursor: pointer;',
+            on: { click: () => startRehoming(c.id) }
+          });
+
+          const purgeBtn = h('button', {
+            textContent: '🗑️ Purge Permanently',
+            style: 'background: var(--health-halted); color: #fff; border: none; padding: 6px 12px; border-radius: 3px; font-weight: bold; cursor: pointer;',
+            on: { click: async () => {
+              if (confirm(`Permanently delete '${c.name}'? This cannot be undone.`)) {
+                await purgeCircuitPermanent(c.id);
+              }
+            }}
+          });
+
+          trashBannerHost.replaceChildren(h('div', {
+            style: 'background: rgba(239, 68, 68, 0.15); border: 1px solid var(--health-halted); border-radius: 6px; padding: 12px; margin-bottom: 20px;'
+          },
+            h('div', { style: 'font-weight: bold; color: var(--health-halted); margin-bottom: 6px;', textContent: `⚠️ TRASHED NODE: ${causeText}` }),
+            h('div', { style: 'display: flex; gap: 10px; margin-top: 8px;' }, restoreBtn, rehomeActionBtn, purgeBtn)
+          ));
         }
-    });
+      });
 
-    // --- EDITOR PANE ---
-    createEffect(() => {
-        const vId = selectedViewId.value;
-        const activeId = selectedListId.value;
-        const circuit = circuitGrid.value.find(c => c.id === activeId);
-        
-        editorPane.replaceChildren();
+      // Inputs with Autosizing Textareas
+      const nameInput = h('input', { value: c.name, style: 'width: 100%; margin-bottom: 12px; font-weight: bold;' });
+      const descInput = createAutosizingTextarea({ value: c.description || '', placeholder: 'Description...', style: 'width: 100%; margin-bottom: 12px; min-height: 50px;' });
+      const doc0Input = createAutosizingTextarea({ value: c.doc0 || '', placeholder: 'Default doc0 prompt draft...', style: 'width: 100%; margin-bottom: 12px; min-height: 60px; font-family: var(--font-mono);' });
 
-        if (!vId) return;
-        if (!activeId) {
-            editorPane.appendChild(h('div', { style: 'margin: auto; color: var(--text-muted); font-style: italic; text-align: center; margin-top: 50px;', textContent: 'Select a Circuit Profile from the left panel.' }));
-            return;
+      // Specialization Class Picker — HIDE IF IN DOCUMENTS OR LANGUAGES SPACE, OR IF DOCUMENT/LANGUAGE NODE
+      const currentSpace = activeSovereignSpace.value;
+      const hideSpecialization = currentSpace === 'documents' || currentSpace === 'languages' || ['document', 'language'].includes(c.specialization);
+
+      const specLabel = hideSpecialization ? null : h('label', { textContent: 'Specialization Class', style: labelStyle });
+      const specSel = hideSpecialization ? null : h('select', { style: 'width: 100%; margin-bottom: 12px;' },
+        h('option', { value: 'circuit', textContent: '⌖ Circuit (Base Node)', selected: c.specialization === 'circuit' }),
+        h('option', { value: 'world', textContent: '🌍 World (Class with API Panel)', selected: c.specialization === 'world' }),
+        h('option', { value: 'project', textContent: '📁 Project (Class)', selected: c.specialization === 'project' }),
+        h('option', { value: 'view', textContent: '👁️ View (Class)', selected: c.specialization === 'view' })
+      );
+
+      // Prior Parent Selector
+      const priorSel = h('select', { style: 'width: 100%; margin-bottom: 12px;' },
+        h('option', { value: '', textContent: 'Root (No Home)', selected: c.priorId === null }),
+        ...allCircuits.filter(other => other.id !== c.id && other.priorId !== '__TRASH__').map(other => 
+          h('option', { value: other.id, textContent: `${other.name} (${other.specialization})`, selected: c.priorId === other.id })
+        )
+      );
+
+      // Physics Sliders Inputs
+      const wIn = h('input', { type: 'number', step: '0.1', value: String(c.physics.omega), style: 'width: 100%;' });
+      const rIn = h('input', { type: 'number', step: '1', value: String(c.physics.r), style: 'width: 100%;' });
+      const lIn = h('input', { type: 'number', step: '1', value: String(c.physics.l), style: 'width: 100%;' });
+      const cIn = h('input', { type: 'number', step: '0.001', value: String(c.physics.c), style: 'width: 100%;' });
+
+      const activeFaceSel = h('select', { style: 'margin-right: 12px;' },
+        ...POLES.map(f => h('option', { value: f, textContent: f, selected: c.activeFace === f }))
+      );
+      const heldAbsentSel = h('select', {},
+        ...POLES.map(f => h('option', { value: f, textContent: f, selected: c.heldAbsentVar === f }))
+      );
+
+      const saveBtn = h('button', { textContent: 'Save Changes', className: 'k4-btn-primary', style: 'margin-top: 15px;' });
+      const rehomeBtn = h('button', {
+        textContent: '⇄ Re-Home Mode',
+        style: 'margin-top: 15px; margin-left: 10px; background: var(--role-paradox); color: #fff; border: none; padding: 8px 12px; border-radius: 4px; font-weight: bold; cursor: pointer;',
+        on: { click: () => startRehoming(c.id) }
+      });
+
+      const status = h('span', { style: 'margin-left: 12px; font-size: 0.8rem; font-weight: bold;' });
+
+      saveBtn.addEventListener('click', async () => {
+        const updated: CircuitNode = {
+          ...c,
+          name: nameInput.value.trim() || c.name,
+          description: descInput.value.trim(),
+          doc0: doc0Input.value,
+          specialization: specSel ? (specSel.value as CircuitSpecialization) : c.specialization,
+          priorId: priorSel.value || null,
+          physics: {
+            omega: parseFloat(wIn.value) || 1.0,
+            r: parseFloat(rIn.value) || 10,
+            l: parseFloat(lIn.value) || 10,
+            c: parseFloat(cIn.value) || 0.1,
+          },
+          activeFace: activeFaceSel.value as K4Pole,
+          heldAbsentVar: heldAbsentSel.value as K4Pole,
+          updatedAt: Date.now(),
+        };
+
+        if (updated.specialization === 'world' && !updated.specializationData) {
+          updated.specializationData = {
+            apiProvider: 'manual',
+            apiKey: '',
+            apiBaseUrl: '',
+            worldDirectives: ''
+          };
         }
 
-        const isNew = activeId === 'new';
+        await vfsDb.upsertCircuit(updated);
+        await refreshAllGrids();
+        status.textContent = '✓ Saved';
+        status.style.color = 'var(--health-clear)';
+        setTimeout(() => { status.textContent = ''; }, 2000);
+      });
+
+      layout.append(
+        trashBannerHost,
+        h('h2', { style: 'margin-top: 0; color: var(--text-primary); border-bottom: 1px solid var(--border-strong); padding-bottom: 8px;', textContent: `Circuit Node Details: ${c.name}` }),
+        h('label', { textContent: 'Name', style: labelStyle }), nameInput,
+        specLabel || h('span'), specSel || h('span'),
+        h('label', { textContent: 'Prior Circuit (Home)', style: labelStyle }), priorSel,
+        h('label', { textContent: 'Description', style: labelStyle }), descInput,
+        h('label', { textContent: 'Draft doc0 Prompt', style: labelStyle }), doc0Input,
         
-        const header = h('div', { style: 'display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid var(--border-strong); padding-bottom: 10px; margin-bottom: 20px;' },
-            h('h2', { style: 'margin: 0; color: var(--text-primary);', textContent: isNew ? 'Create New Profile' : 'Edit Circuit Profile' })
-        );
+        h('div', { style: 'margin-top: 15px; border-top: 1px solid var(--border-subtle); padding-top: 12px;' },
+          h('strong', { textContent: 'Active Poles', style: 'display: block; color: var(--text-primary); margin-bottom: 8px;' }),
+          h('label', { textContent: 'Active Face: ', style: sublabelStyle }), activeFaceSel,
+          h('label', { textContent: 'Held Absent Variable: ', style: sublabelStyle }), heldAbsentSel
+        ),
 
-        const nameInput = h('input', { value: circuit?.name || '', style: 'width: 100%; max-width: 400px; margin-bottom: 15px;', placeholder: 'e.g., High-Stress Sprint' });
-        
-        const wInput = h('input', { type: 'number', step: '0.1', value: circuit?.omega?.toString() || '1.0', style: 'width: 100%; margin-bottom: 15px;' });
-        const rInput = h('input', { type: 'number', step: '1', value: circuit?.r?.toString() || '10', style: 'width: 100%; margin-bottom: 15px;' });
-        const lInput = h('input', { type: 'number', step: '1', value: circuit?.l?.toString() || '10', style: 'width: 100%; margin-bottom: 15px;' });
-        const cInput = h('input', { type: 'number', step: '0.001', value: circuit?.c?.toString() || '0.1', style: 'width: 100%; margin-bottom: 15px;' });
+        h('div', { style: 'margin-top: 15px; border-top: 1px solid var(--border-subtle); padding-top: 12px;' },
+          h('strong', { textContent: 'AC Baseline Physics Substrate', style: 'display: block; color: var(--text-primary); margin-bottom: 8px;' }),
+          h('div', { style: 'display: grid; grid-template-columns: max-content 1fr; column-gap: 12px; row-gap: 8px; align-items: center;' },
+            h('label', { textContent: 'ω (Pacing)', style: sublabelStyle }), wIn,
+            h('label', { textContent: 'R (Friction)', style: sublabelStyle }), rIn,
+            h('label', { textContent: 'L (Momentum)', style: sublabelStyle }), lIn,
+            h('label', { textContent: 'C (Tension)', style: sublabelStyle }), cIn
+          )
+        ),
 
-        const saveBtn = h('button', { textContent: 'Save Profile', className: 'k4-btn-primary' });
-        const saveStatus = h('span', { style: 'color: var(--health-clear); font-weight: bold; margin-left: 10px; display: none;' });
+        h('div', { style: 'display: flex; align-items: center;' }, saveBtn, rehomeBtn, status)
+      );
+    }
+  });
 
-        saveBtn.addEventListener('click', async () => {
-            if (!nameInput.value.trim()) return;
-            const updated = {
-                id: isNew ? crypto.randomUUID() : circuit!.id,
-                viewId: vId,
-                name: nameInput.value.trim(),
-                omega: parseFloat(wInput.value) || 0,
-                r: parseFloat(rInput.value) || 0,
-                l: parseFloat(lInput.value) || 0,
-                c: parseFloat(cInput.value) || 0,
-            };
-            await vfsDb.upsertCircuit(updated);
-            circuitGrid.value = await vfsDb.getCircuits(vId);
-            selectedListId.value = updated.id; // Switch off 'new' mode
-            saveStatus.textContent = 'Saved!';
-            saveStatus.style.display = 'inline';
-            setTimeout(() => saveStatus.style.display = 'none', 2000);
-        });
-
-        const formGrid = h('div', { style: 'background: var(--bg-surface); padding: 20px; border: 1px solid var(--border-strong); border-radius: 6px; max-width: 500px;' },
-            h('label', { textContent: 'Profile Name', style: 'font-weight: bold; color: var(--text-secondary); display: block; margin-bottom: 4px;' }), nameInput,
-            h('h4', { textContent: 'AC Coordinates (Tuning)', style: 'margin-top: 10px; color: var(--text-primary); border-bottom: 1px solid var(--border-subtle); padding-bottom: 4px; margin-bottom: 15px;' }),
-            h('label', { textContent: 'Driving Frequency (ω)', style: 'font-weight: bold; color: var(--text-secondary); display: block; margin-bottom: 4px;' }), wInput,
-            h('label', { textContent: 'Resistance (R - Friction)', style: 'font-weight: bold; color: var(--text-secondary); display: block; margin-bottom: 4px;' }), rInput,
-            h('label', { textContent: 'Inductance (L - Momentum)', style: 'font-weight: bold; color: var(--text-secondary); display: block; margin-bottom: 4px;' }), lInput,
-            h('label', { textContent: 'Capacitance (C - Tension)', style: 'font-weight: bold; color: var(--text-secondary); display: block; margin-bottom: 4px;' }), cInput,
-            h('div', { style: 'margin-top: 20px; display: flex; align-items: center;' }, saveBtn, saveStatus)
-        );
-
-        editorPane.append(header, formGrid);
-    });
-
-    return () => { container.innerHTML = ''; };
+  return () => { container.innerHTML = ''; };
 }
 
-screenRegistry.register({ id: 'circuit', label: 'Circuit', order: 100, mount: mountCircuitScreen });
+function createAutosizingTextarea(props: any): HTMLTextAreaElement {
+  const area = h('textarea', props) as HTMLTextAreaElement;
+  const autoResize = () => {
+    area.style.height = 'auto';
+    area.style.height = `${area.scrollHeight}px`;
+  };
+  area.addEventListener('input', autoResize);
+  setTimeout(autoResize, 0);
+  return area;
+}
+
+const labelStyle = 'display: block; color: var(--text-secondary); margin-bottom: 4px; font-weight: bold; font-size: 0.85rem;';
+const sublabelStyle = 'font-size: 0.78rem; color: var(--text-muted);';
+
+screenRegistry.register({ id: 'circuit', label: 'Circuit', order: 10, mount: mountCircuitScreen });

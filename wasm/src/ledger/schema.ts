@@ -1,100 +1,92 @@
 // wasm/src/ledger/schema.ts
 
 export type K4Type = 'P' | 'I' | 'U' | 'R' | 'P-U' | 'I-R' | 'P-R' | 'I-U' | 'P-I' | 'U-R';
+export type K4Pole = 'P' | 'I' | 'U' | 'R';
 export type ElementRole = 'SPEC' | 'MATERIAL' | 'NIL';
 
-// ─── TIER 1: WORLD ──────────────────────────────────────────────────────────
-export interface World {
-  id: string;
-  name: string;
-  description: string;
+export type CircuitSpecialization = 
+  | 'circuit' 
+  | 'world' 
+  | 'project' 
+  | 'view' 
+  | 'language' 
+  | 'document';
+
+// ─── WORLD CLASS SETTINGS ───────────────────────────────────────────────────
+export interface WorldSettings {
   apiProvider: 'manual' | 'auto' | 'openai' | 'anthropic' | 'custom';
   apiKey: string;
   apiBaseUrl: string;
-  createdAt: number;
-  updatedAt: number;
+  worldDirectives: string;
 }
 
-// ─── TIER 2: PROJECT ────────────────────────────────────────────────────────
-export interface Project {
+// ─── DOCUMENT CLASS PAYLOAD ─────────────────────────────────────────────────
+export interface DocumentPayload {
+  content: string;
+  defaultA: boolean;               // Shared across all faces
+  defaultP: boolean;               // Included for Fire (Drive)
+  defaultU: boolean;               // Included for Air (Structure)
+  defaultI: boolean;               // Included for Water (Flow)
+  defaultR: boolean;               // Included for Earth (Ground)
+  kind: 'source' | 'derived';
+}
+
+// ─── THE SINGLE UNIVERSAL ENTITY: CIRCUIT NODE ───────────────────────────────
+export interface CircuitNode {
   id: string;
-  worldId: string;
+  priorId: string | null;          // null = Root; '__TRASH__' = Trashed; or parent node ID
+  
+  specialization: CircuitSpecialization;
+  
+  // Specialization Payloads
+  specializationData?: WorldSettings;     // Present when specialization === 'world'
+  documentData?: DocumentPayload;         // Present when specialization === 'document'
+
   name: string;
   description: string;
+  doc0: string;                    // Live draft intent / prompt
+
+  // AC Baseline Physics Substrate
+  physics: {
+    omega: number;                 // Driving frequency (pacing)
+    r: number;                     // Resistance (friction)
+    l: number;                     // Inductance (memory/momentum)
+    c: number;                     // Capacitance (anticipation/tension)
+  };
+
+  activeFace: K4Pole;
+  heldAbsentVar: K4Pole;
+
   createdAt: number;
   updatedAt: number;
 }
 
-// ─── TIER 3: VIEW ───────────────────────────────────────────────────────────
-export interface View {
-  id: string;
-  projectId: string;
-  name: string;
-  description: string;
-  doc0: string; // The growing draft prompt
-  innateOmega: number;
-  innateR: number;
-  innateL: number;
-  innateC: number;
-  createdAt: number;
-  updatedAt: number;
-}
+export type Circuit = CircuitNode;
+export type Language = CircuitNode;
+export type Document = CircuitNode;
 
-// ─── CROSS-WORLD RESOURCE: LANGUAGES (PEER TO WORLDS) ───────────────────────
-export interface Language {
-  id: string;
-  name: string;
-  description?: string;
-  createdAt: number;
-  updatedAt: number;
-}
-
+// ─── VOCABULARIES (Belong to Language CircuitNodes) ─────────────────────────
 export interface Vocabulary {
   id: string;
-  languageId: string;
+  languageId: string;             // FK -> CircuitNode.id (where specialization === 'language')
   term: string;
   k4Type: K4Type;
   role: ElementRole;
   description: string;
 }
 
-/** World's linked subset of cross-world Languages */
-export interface WorldLangSelection {
-  id: string; // `${worldId}:${languageId}`
-  worldId: string;
-  languageId: string;
+// ─── JUNCTIONS: CIRCUITS POINTING TO SOVEREIGN NODES ───────────────────────
+export interface CircuitLangSelection {
+  id: string;                     // `${circuitId}:${languageId}`
+  circuitId: string;               // FK -> CircuitNode.id
+  languageId: string;              // FK -> Sovereign Language CircuitNode.id
   active: boolean;
 }
 
-/** View's active subset of Languages */
-export interface ViewLangSelection {
-  id: string; // `${viewId}:${languageId}`
-  viewId: string;
-  languageId: string;
-  active: boolean;
-}
-
-// ─── COMPOSABLE RESOURCE: DOCUMENTS ─────────────────────────────────────────
-export interface Document {
-  id: string;
-  ownerScope: 'world' | 'project';
-  ownerId: string;
-  name: string;
-  content: string;
-  defaultA: boolean;
-  defaultP: boolean;
-  defaultU: boolean;
-  defaultI: boolean;
-  defaultR: boolean;
-  kind: 'source' | 'derived';
-  createdAt: number;
-  updatedAt: number;
-}
-
-export interface ViewDocOverride {
-  id: string;
-  viewId: string;
-  documentId: string;
+export interface CircuitDocOverride {
+  id: string;                     // `${circuitId}:${documentId}`
+  circuitId: string;               // FK -> CircuitNode.id
+  documentId: string;              // FK -> Sovereign Document CircuitNode.id
   A: boolean | null;
   P: boolean | null;
   U: boolean | null;
@@ -102,53 +94,52 @@ export interface ViewDocOverride {
   R: boolean | null;
 }
 
-// ─── APP-KINDS REGISTRY ─────────────────────────────────────────────────────
-export type KindScope = 'world' | 'project';
+// ─── SYSTEM FLOWS: KINDS REGISTRY ──────────────────────────────────────────
 export type KindDispatch = 'engine' | 'template';
-
-export interface KindRequires {
-  view?: boolean;
-  attachedDocs?: 'none' | 'at-least-one' | 'exactly-one';
-  lockedCoordinate?: boolean;
-  anchor?: boolean;
-}
 
 export interface AppKind {
   id: string;
-  scope: KindScope;
-  scopeId: string;
-  key: string;
+  key: string;                    // Unique flow key ('validator', 'bridge', 'controller', 'paradox', 'chat', etc.)
   alias: string;
   hint: string;
   family: string;
   dispatch: KindDispatch;
   template?: string;
   engineMechanicsDoc?: string;
-  requires: KindRequires;
+  requires: {
+    circuit?: boolean;
+    attachedDocs?: 'none' | 'at-least-one' | 'exactly-one';
+    lockedCoordinate?: boolean;
+    anchor?: boolean;
+  };
+  isSystemFlow: boolean;
   createdAt: number;
   updatedAt: number;
 }
 
-// ─── TURN LOG (THE LEDGER) ──────────────────────────────────────────────────
+// ─── EXECUTION AUDIT LOG ────────────────────────────────────────────────────
 export type LedgerDirection = 'out' | 'in' | 'system';
 
 export interface LedgerRow {
   id: string;
-  viewId: string;
+  circuitId: string;               // FK -> CircuitNode.id
   turnNumber: number;
   seq: number;
   parentId?: string;
-  kind: string;
+  kind: string;                   // SystemKind.key
   direction: LedgerDirection;
   header: string;
   body: string;
   kept?: boolean;
 
+  // Execution Snapshot
   doc0Snapshot: string;
   attachedDocIds: string[];
   activeLanguageIds: string[];
+  lineagePath: string[];          // List of circuit IDs up the prior chain
   warm: boolean;
 
+  // Wasm PTR Payload
   ptrCycle?: number;
   ptrSeq?: number;
   ptrStance?: string;
@@ -164,7 +155,7 @@ export type ConsoleSeverity = 'info' | 'notice' | 'warn' | 'error';
 
 export interface ConsoleRow {
   id: string;
-  viewId: string | null;
+  circuitId: string | null;        // null = System-wide event
   severity: ConsoleSeverity;
   category: string;
   message: string;
@@ -181,17 +172,9 @@ export interface WorldFrameState {
   updatedAt: number;
 }
 
-export interface Circuit {
-  id: string;
-  viewId: string;
-  name: string;
-  activeFace: K4Type;
-  heldAbsentVar: K4Type;
-  omega: number;
-  r: number;
-  l: number;
-  c: number;
-  diagnosticVocab: string[];
-  rewardQuestion: string;
+// ─── GLOBAL APP SETTINGS ───────────────────────────────────────────────────
+export interface SystemSettings {
+  autoLoadSeedData: boolean;      // Default: false
+  seedDataFileNames: string;     // e.g. "seed-data.json"
+  telemetryMaxEntries: number;
 }
-

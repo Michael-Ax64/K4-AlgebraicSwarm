@@ -34,7 +34,7 @@ export function mountViewsScreen(container: HTMLElement): () => void {
         const isActive = activeV === v.id;
         const vRow = h('div', { style: `display: flex; justify-content: space-between; padding: 10px; border-bottom: 1px solid var(--border-subtle); align-items: center; background: ${isActive ? 'var(--bg-elevated)' : 'transparent'};` },
           h('strong', { textContent: `👁️ ${v.name}`, style: `color: ${isActive ? 'var(--role-controller)' : 'var(--text-primary)'};` }),
-          h('div', { className: 'baseline-physics', style: 'margin-right: 15px;', textContent: `Innate Baseline Physics: ω=${v.innateOmega}, R=${v.innateR}, L=${v.innateL}, C=${v.innateC}` }),
+          h('div', { style: 'font-size: 0.8rem; font-family: var(--font-mono); color: var(--text-muted); text-align: right; margin-left: auto; margin-right: 15px;', textContent: `AC Baseline Physics: ω=${v.innateOmega}, R=${v.innateR}, L=${v.innateL}, C=${v.innateC}` }),
           h('button', {
             textContent: isActive ? 'Active' : 'Select View',
             className: 'k4-btn-primary',
@@ -56,24 +56,10 @@ export function mountViewsScreen(container: HTMLElement): () => void {
 
     const nameInput = h('input', { placeholder: 'View Name (e.g. Exploratory Rotation)', value: editingView?.name || '', style: 'width: 100%; margin-bottom: 15px;' });
 
-    // AC Physics Edit Boxes (Flush right over 4 lines)
-    const wInput = h('input', { type: 'number', step: '0.1', value: editingView?.innateOmega?.toString() || '1.0', style: 'width: 110px; text-align: right; font-family: var(--font-mono);' });
-    const rInput = h('input', { type: 'number', step: '1', value: editingView?.innateR?.toString() || '10', style: 'width: 110px; text-align: right; font-family: var(--font-mono);' });
-    const lInput = h('input', { type: 'number', step: '1', value: editingView?.innateL?.toString() || '10', style: 'width: 110px; text-align: right; font-family: var(--font-mono);' });
-    const cInput = h('input', { type: 'number', step: '0.001', value: editingView?.innateC?.toString() || '0.1', style: 'width: 110px; text-align: right; font-family: var(--font-mono);' });
-
-    const makePhysicsRow = (label: string, inputEl: HTMLElement) =>
-      h('div', { style: 'display: flex; justify-content: flex-end; align-items: center; gap: 10px; width: 100%; margin-bottom: 6px;' },
-        h('label', { style: 'font-size: 0.8rem; color: var(--text-muted); text-align: right;', textContent: label }),
-        inputEl
-      );
-
-    const physicsContainer = h('div', { style: 'display: flex; flex-direction: column; align-items: flex-end; margin-top: 10px;' },
-      makePhysicsRow('ω (Pacing)', wInput),
-      makePhysicsRow('R (Friction)', rInput),
-      makePhysicsRow('L (Momentum)', lInput),
-      makePhysicsRow('C (Tension)', cInput)
-    );
+    const wInput = h('input', { type: 'number', step: '0.1', value: editingView?.innateOmega?.toString() || '1.0', style: 'width: 48%; display: inline-block;' });
+    const rInput = h('input', { type: 'number', step: '1', value: editingView?.innateR?.toString() || '10', style: 'width: 48%; display: inline-block; float: right;' });
+    const lInput = h('input', { type: 'number', step: '1', value: editingView?.innateL?.toString() || '10', style: 'width: 48%; display: inline-block; margin-top: 15px;' });
+    const cInput = h('input', { type: 'number', step: '0.001', value: editingView?.innateC?.toString() || '0.1', style: 'width: 48%; display: inline-block; float: right; margin-top: 15px;' });
 
     const saveBtn = h('button', { textContent: editingView ? 'Update View' : 'Create View', className: 'k4-btn-primary', style: 'margin-top: 20px;' });
 
@@ -101,8 +87,9 @@ export function mountViewsScreen(container: HTMLElement): () => void {
     formCard.append(
       h('label', { textContent: 'Name', style: 'display: block; color: var(--text-secondary); margin-bottom: 4px; font-weight: bold;' }), nameInput,
       h('div', { style: 'margin-top: 15px; border-top: 1px solid var(--border-subtle); padding-top: 15px;' },
-        h('strong', { textContent: 'AC Baseline Physics', style: 'display: block; color: var(--text-primary); margin-bottom: 12px; text-align: right;' }),
-        physicsContainer
+        h('strong', { textContent: 'AC Baseline Physics', style: 'display: block; color: var(--text-primary); margin-bottom: 10px; text-align: right;' }),
+        h('div', {}, h('label', { textContent: 'ω (Pacing)', style: 'font-size: 0.8rem; color: var(--text-muted);' }), wInput, h('label', { textContent: 'R (Friction)', style: 'font-size: 0.8rem; color: var(--text-muted); margin-left: 4%;' }), rInput),
+        h('div', {}, h('label', { textContent: 'L (Momentum)', style: 'font-size: 0.8rem; color: var(--text-muted);' }), lInput, h('label', { textContent: 'C (Tension)', style: 'font-size: 0.8rem; color: var(--text-muted); margin-left: 4%;' }), cInput)
       ),
       saveBtn
     );
@@ -113,5 +100,11 @@ export function mountViewsScreen(container: HTMLElement): () => void {
   return () => { container.innerHTML = ''; };
 }
 
-screenRegistry.register({ id: 'views', label: 'Views', order: 11, mount: mountViewsScreen });
+// Retired: this screen was registered but unreachable — not in globalScreenIds
+// nor viewPeerScreenIds, and no pushScreen('views') callers exist. Its
+// list-and-form functionality is served by the Project screen's 'views'
+// sub-tab. `mountViewsScreen` remains exported for anyone reviving this as
+// a peer/global; add it back to the appropriate nav array in shell/default.ts
+// and re-register here.
+// screenRegistry.register({ id: 'views', label: 'Views', order: 11, mount: mountViewsScreen });
 
