@@ -5,10 +5,12 @@ import {
   currentRole, currentMode, braidThreads, selectedThreadId, sandboxes, manualPrompt, apiLog,
   manifoldLog, lastQuery
 } from './state';
+
 import {
   selectedCircuitId, activeCircuit, updateActiveCircuitDoc0, beginLedgerTurn,
   appendConsoleRow, resolveCircuitLineage, systemSettings
 } from './ledger/grid-state';
+
 import { vfsDb } from './ledger/fs';
 import { LedgerVFS } from './ledger/vfs-wrapper';
 import { callBuiltInAPI } from './llm-client';
@@ -74,6 +76,20 @@ async function persistEngineStateForCircuit(circuitId: string) {
   }
 }
 
+export function resetEngineRun(): void {
+  if (engine && typeof engine.reset_run === 'function') {
+    engine.reset_run();
+  }
+  uiState.value = 'idle';
+}
+
+export function resetEngineAll(): void {
+  if (engine && typeof engine.reset_all === 'function') {
+    engine.reset_all();
+  }
+  uiState.value = 'idle';
+}
+
 export function extractHeader(text: string): { header: string; body: string } {
   const match = text.match(/^(\[STATE[\s\S]*?\][\s\S]*?)\n\n([\s\S]*)$/);
   return match ? { header: match[1], body: match[2] } : { header: '', body: text };
@@ -82,7 +98,8 @@ export function extractHeader(text: string): { header: string; body: string } {
 export async function processSubmission(
   arg1: string = 'chat',
   warm: boolean = false,
-  doc0Override?: string
+  doc0Override?: string,
+  jsonMode: boolean = false
 ): Promise<void> {
   const cId = selectedCircuitId.peek();
   if (!cId) throw new Error("Cannot submit intent: No Active Circuit selected.");
@@ -143,7 +160,7 @@ export async function processSubmission(
     }
 
     try {
-      const responseText = await callBuiltInAPI(apiConfig as any, compiledPrompt, false);
+      const responseText = await callBuiltInAPI(apiConfig as any, compiledPrompt, jsonMode);      
       const { header, body } = extractHeader(responseText);
 
       await beginLedgerTurn({
@@ -289,4 +306,3 @@ async function runEngineLoop(initialCommand: any, parentTurnId?: string, kindKey
     }
   }
 }
-

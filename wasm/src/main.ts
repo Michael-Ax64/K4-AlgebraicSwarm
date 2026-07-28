@@ -2,6 +2,8 @@
 
 window.addEventListener('submit', (e) => e.preventDefault(), { capture: true });
 
+import configData from './config.json';
+import { bootConfig } from './config';
 import { bootLedger } from './ledger/grid-state';
 import { bootAirlock } from './bridge';
 import { bootSystemOS } from './router';
@@ -30,6 +32,7 @@ async function init() {
   try {
     console.log("🟢 [Boot] Initializing OS...");
 
+    bootConfig(configData);
     await bootLedger();
     await bootAirlock();
     

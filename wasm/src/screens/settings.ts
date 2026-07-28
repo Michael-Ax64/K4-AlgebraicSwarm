@@ -4,6 +4,7 @@ import { systemSettings, recalculateTrashCounters } from '../ledger/grid-state';
 import { vfsDb } from '../ledger/fs';
 import { screenRegistry } from './registry';
 import { runSeedImport } from '../ledger/seed';
+import { providers, catalogDefaultId } from '../config';
 import { h } from '../dom';
 
 export function mountSettingsScreen(container: HTMLElement): () => void {
@@ -12,6 +13,32 @@ export function mountSettingsScreen(container: HTMLElement): () => void {
 
   const curSettings = systemSettings.value;
 
+  // ── API Provider Global Default ────────────────────────────────────────
+  const catalog     = providers.value;
+  const shippedFall = catalogDefaultId.value;
+  const currentPick = curSettings.defaultProviderId || '';
+
+  const providerSel = h('select', {
+    style: 'width: 100%; max-width: 500px; margin-top: 6px; font-family: var(--font-mono);'
+  },
+    h('option', {
+      value: '',
+      textContent: `Use catalog default (${shippedFall})`,
+      selected: currentPick === ''
+    }),
+    ...catalog.map(p => h('option', {
+      value: p.id,
+      textContent: `${p.name}  [${p.transport}]`,
+      selected: currentPick === p.id
+    }))
+  );
+
+  const providerNote = h('div', {
+    style: 'font-size: 0.78rem; color: var(--text-muted); margin-top: 6px; font-style: italic;',
+    textContent: 'Each World falls back to this global default unless it selects a specific provider or Manual.'
+  });
+
+  // ── Seed Data ──────────────────────────────────────────────────────────
   const autoSeedCheck = h('input', {
     type: 'checkbox',
     checked: curSettings.autoLoadSeedData,
@@ -53,9 +80,10 @@ export function mountSettingsScreen(container: HTMLElement): () => void {
     style: 'margin-top: 15px;',
     on: { click: async () => {
       const updated = {
-        autoLoadSeedData: autoSeedCheck.checked,
-        seedDataFileNames: fileNamesInput.value.trim(),
-        telemetryMaxEntries: 0
+        autoLoadSeedData:   autoSeedCheck.checked,
+        seedDataFileNames:  fileNamesInput.value.trim(),
+        telemetryMaxEntries: 0,
+        defaultProviderId:  providerSel.value  // '' means "fall through to catalog default"
       };
       await vfsDb.upsertSettings(updated);
       systemSettings.value = updated;
@@ -76,8 +104,16 @@ export function mountSettingsScreen(container: HTMLElement): () => void {
 
   layout.append(
     h('h2', { style: 'color: var(--text-primary); border-bottom: 1px solid var(--border-strong); padding-bottom: 8px; margin-bottom: 20px;', textContent: 'System Settings' }),
-    
-    // Seed Data Config Panel
+
+    // ── API Provider Panel ─────────────────────────────────────────────
+    h('div', { style: 'background: var(--bg-surface); padding: 15px; border-radius: 6px; border: 1px solid var(--border-strong); margin-bottom: 20px;' },
+      h('h3', { style: 'margin-top: 0; color: var(--text-primary); font-size: 0.95rem; margin-bottom: 10px;', textContent: '🔌 API Provider — Global Default' }),
+      h('label', { style: 'display: block; font-size: 0.8rem; color: var(--text-muted); font-weight: bold;', textContent: 'Default Provider (from src/config.json catalog)' }),
+      providerSel,
+      providerNote
+    ),
+
+    // ── Seed Data Panel ────────────────────────────────────────────────
     h('div', { style: 'background: var(--bg-surface); padding: 15px; border-radius: 6px; border: 1px solid var(--border-strong); margin-bottom: 20px;' },
       h('h3', { style: 'margin-top: 0; color: var(--text-primary); font-size: 0.95rem; margin-bottom: 10px;', textContent: '🌱 Seed Data Mechanics' }),
       h('label', { style: 'display: flex; align-items: center; font-size: 0.85rem; color: var(--text-secondary); cursor: pointer;' },
@@ -91,7 +127,7 @@ export function mountSettingsScreen(container: HTMLElement): () => void {
 
     saveSettingsBtn,
 
-    // Danger Zone
+    // ── Danger Zone ────────────────────────────────────────────────────
     h('div', { style: 'margin-top: 40px; padding: 15px; border: 1px dashed var(--health-halted); border-radius: 6px; background: rgba(239, 68, 68, 0.05);' },
       h('h3', { style: 'color: var(--health-halted); margin-top: 0; font-size: 0.95rem;', textContent: 'Danger Zone' }),
       h('p', { style: 'color: var(--text-secondary); font-size: 0.82rem; margin-bottom: 10px;', textContent: 'Permanently wipes IndexedDB and reloads the application.' }),
@@ -103,4 +139,3 @@ export function mountSettingsScreen(container: HTMLElement): () => void {
 }
 
 screenRegistry.register({ id: 'settings', label: 'Settings', order: 60, mount: mountSettingsScreen });
-

@@ -1,14 +1,16 @@
 // wasm/src/screens/world.ts
 
-import { createEffect, Signal } from '../reactive';
 import { screenRegistry } from './registry';
+import { createEffect, Signal } from '../reactive';
 import {
   activeCircuit, circuitsGrid, selectedCircuitId,
   globalLanguagesGrid, globalDocumentsGrid
 } from '../ledger/grid-state';
+
 import { vfsDb } from '../ledger/fs';
-import { CircuitNode, WorldSettings, LedgerRow } from '../ledger/schema';
+import { providers } from '../config';
 import { pushScreen } from '../router';
+import { CircuitNode, WorldSettings, LedgerRow } from '../ledger/schema';
 import { h } from '../dom';
 
 type WorldSubTab = 'settings' | 'children' | 'languages' | 'documents' | 'history';
@@ -73,12 +75,26 @@ export function mountWorldScreen(container: HTMLElement): () => void {
 
     // ─── TAB 1: API SETTINGS & DIRECTIVES ──────────────────────────────────
     if (tab === 'settings') {
+      const catalog     = providers.value;
+      const currentPick = worldData.apiProvider || 'default';
+
       const providerSel = h('select', { style: 'width: 100%; max-width: 500px; margin-bottom: 15px;' },
-        h('option', { value: 'manual', textContent: 'Manual (Copy/Paste)', selected: worldData.apiProvider === 'manual' }),
-        h('option', { value: 'auto', textContent: 'Auto (Built-in AI / Local)', selected: worldData.apiProvider === 'auto' }),
-        h('option', { value: 'openai', textContent: 'OpenAI', selected: worldData.apiProvider === 'openai' }),
-        h('option', { value: 'custom', textContent: 'Custom / Local', selected: worldData.apiProvider === 'custom' })
-      );
+        h('option', {
+          value: 'default',
+          textContent: 'Use Global Default (from Settings)',
+          selected: currentPick === 'default' || currentPick === '' || currentPick === 'auto'
+        }),
+        h('option', {
+          value: 'manual',
+          textContent: 'Manual (Copy/Paste)',
+          selected: currentPick === 'manual'
+        }),
+        ...catalog.map(p => h('option', {
+          value: p.id,
+          textContent: `${p.name}  [${p.transport}]`,
+          selected: currentPick === p.id
+        }))
+      );      
 
       const keyInput = h('input', { type: 'password', value: worldData.apiKey || '', placeholder: 'API Key (if required)...', style: 'width: 100%; max-width: 500px; margin-bottom: 15px;' });
       const urlInput = h('input', { type: 'text', value: worldData.apiBaseUrl || '', placeholder: 'Base URL (e.g. https://api.openai.com/v1)...', style: 'width: 100%; max-width: 500px; margin-bottom: 15px;' });

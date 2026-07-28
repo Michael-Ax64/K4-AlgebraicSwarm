@@ -3,37 +3,73 @@
 import { createEffect, Signal } from '../reactive';
 import { screenRegistry } from './registry';
 import { uiState, manualPrompt } from '../state';
-import { processSubmission, submitLlmPaste } from '../bridge';
-import { selectedCircuitId, activeCircuit,
-         ledgerGrid, updateActiveCircuitDoc0 } from '../ledger/grid-state';
-import { systemKindsGrid, resolveKindAlias } from '../kinds/kinds-registry';
+import { processSubmission, submitLlmPaste, processUserReply, resetEngineRun } from '../bridge';
+import {
+  selectedCircuitId, activeCircuit, ledgerGrid, updateActiveCircuitDoc0,
+  markLedgerAnswerKept, editLedgerRow, resolvedInclusionForActiveView,
+  activeCircuitLangs
+} from '../ledger/grid-state';
+import { systemKindsGrid, resolveKind, resolveKindAlias } from '../kinds/kinds-registry';
+import { LedgerRow } from '../ledger/schema';
+import { pushScreen } from '../router';
 import { h } from '../dom';
-
 
 export function mountChatScreen(container: HTMLElement): () => void {
   const selectedKindKey = new Signal<string>('chat');
   const isWarm = new Signal<boolean>(false);
+  const editingRowId = new Signal<string | null>(null);
 
   const layout = h('div', { style: 'display: flex; flex-direction: column; height: 100%; padding: 15px;' });
   container.appendChild(layout);
 
-  const cId = selectedCircuitId.peek();
-  const circ = activeCircuit.peek();
+  let currentRenderedCircuitId: string | null = null;
 
-  if (!cId || !circ) {
-    layout.appendChild(h('div', { 
-      style: 'margin: auto; color: var(--text-muted); font-style: italic; text-align: center;',
-      textContent: '🔒 Select a Circuit from the context graph to initialize Chat.'
-    }));
-    return () => { container.innerHTML = ''; };
-  }
-
-  // 1. Transcript Log
+  // 1. Transcript Container
   const logContainer = h('div', { 
     style: 'flex: 1; overflow-y: auto; background: var(--bg-surface); border: 1px solid var(--border-strong); border-radius: 4px; padding: 15px; margin-bottom: 10px;'
   });
 
-  // 2. Kind Selector Bar
+  // 2. Manual Mode Workspace (Copy Prompt & Paste Response)
+  const manualPromptArea = h('textarea', {
+    readOnly: true,
+    style: 'width: 100%; height: 120px; font-family: var(--font-mono); font-size: 0.85rem; background: var(--bg-deep); color: var(--text-primary); border: 1px solid var(--border-strong); border-radius: 4px; padding: 10px; margin-bottom: 8px;'
+  });
+
+  const copyPromptBtn = h('button', {
+    textContent: '📋 Copy Prompt to Clipboard',
+    className: 'k4-btn-primary',
+    style: 'margin-bottom: 12px;',
+    on: { click: () => {
+      navigator.clipboard.writeText(manualPromptArea.value);
+      copyPromptBtn.textContent = 'Copied!';
+      setTimeout(() => copyPromptBtn.textContent = '📋 Copy Prompt to Clipboard', 2000);
+    }}
+  });
+
+  const pasteArea = h('textarea', {
+    placeholder: 'Paste the external LLM response JSON/markdown here...',
+    style: 'width: 100%; height: 100px; font-family: var(--font-mono); font-size: 0.85rem; background: var(--bg-deep); color: var(--text-primary); border: 1px solid var(--border-strong); border-radius: 4px; padding: 10px; margin-bottom: 8px;'
+  });
+
+  const submitPasteBtn = h('button', {
+    textContent: '🚀 Submit Pasted LLM Response',
+    className: 'k4-btn-primary',
+    on: { click: async () => {
+      const text = pasteArea.value.trim();
+      if (!text) return;
+      pasteArea.value = '';
+      await submitLlmPaste(text);
+    }}
+  });
+
+  const manualWorkspace = h('div', {
+    style: 'background: var(--bg-panel); border: 1px solid var(--role-bridge); border-radius: 6px; padding: 12px; margin-bottom: 12px; display: none;'
+  },
+    h('h3', { style: 'margin-top: 0; color: var(--role-bridge); font-size: 0.95rem; margin-bottom: 6px;', textContent: '⚠️ Manual Mode: Copy Prompt to LLM & Paste Response' }),
+    manualPromptArea, copyPromptBtn, pasteArea, submitPasteBtn
+  );
+
+  // 3. Toolbar Controls (Kind Picker & Warm Continuation Toggle)
   const kindSelect = h('select', {
     style: 'padding: 6px 10px; font-weight: bold; background: var(--bg-surface); border: 1px solid var(--border-strong); border-radius: 4px;',
     on: { change: (e: Event) => selectedKindKey.value = (e.target as HTMLSelectElement).value }
@@ -54,14 +90,31 @@ export function mountChatScreen(container: HTMLElement): () => void {
     h('label', { style: 'font-size: 0.8rem; color: var(--text-secondary); display: flex; align-items: center; gap: 4px;' }, warmCheck, ' warm continuation')
   );
 
-  // 3. Draft Doc0 Prompt Input
+  // 4. Context Summary Indicator Bar
+  const contextSummaryBar = h('div', {
+    style: 'display: flex; justify-content: space-between; align-items: center; font-size: 0.78rem; font-family: var(--font-mono); color: var(--text-secondary); background: var(--bg-elevated); padding: 4px 12px; border-left: 1px solid var(--border-subtle); border-right: 1px solid var(--border-subtle);'
+  });
+
+  const manageDocsBtn = h('button', {
+    textContent: '📄 Edit Documents Matrix',
+    style: 'background: transparent; border: 1px solid var(--border-strong); color: var(--role-bridge); border-radius: 3px; cursor: pointer; padding: 2px 6px; font-size: 0.75rem; font-weight: bold;',
+    on: { click: () => pushScreen('documents') }
+  });
+
+  // 5. Hint Bar
+  const hintBar = h('div', {
+    style: 'font-size: 0.8rem; color: var(--role-bridge); padding: 4px 12px; background: var(--bg-elevated); border-left: 1px solid var(--border-subtle); border-right: 1px solid var(--border-subtle); font-style: italic;'
+  });
+
+  // 6. Main Input Textarea & Send Button
   const doc0Input = h('textarea', {
     style: 'width: 100%; height: 75px; padding: 10px; resize: vertical; font-family: var(--font-mono); font-size: 0.9rem; background: var(--bg-surface); color: var(--text-primary); border: 1px solid var(--border-strong); border-radius: 0 0 4px 4px;',
-    value: circ.doc0 || '',
     placeholder: 'Compose prompt draft (doc0)...',
     on: { input: async (e: Event) => {
-      const val = (e.target as HTMLTextAreaElement).value;
-      await updateActiveCircuitDoc0(val);
+      if (uiState.value === 'idle' || uiState.value === 'halted') {
+        const val = (e.target as HTMLTextAreaElement).value;
+        await updateActiveCircuitDoc0(val);
+      }
     }}
   });
 
@@ -70,11 +123,51 @@ export function mountChatScreen(container: HTMLElement): () => void {
     className: 'k4-btn-primary',
     style: 'height: 40px; padding: 0 20px; font-weight: bold; align-self: flex-end; margin-top: 8px;',
     on: { click: async () => {
-      await processSubmission(selectedKindKey.value, isWarm.value, doc0Input.value);
+      if (uiState.value === 'halted') {
+        resetEngineRun();
+        return;
+      }
+
+      const text = doc0Input.value.trim();
+      if (!text) return;
+
+      const state = uiState.value;
+      if (state === 'awaiting_llm_paste') {
+        await submitLlmPaste(text);
+      } else if (state === 'awaiting_user') {
+        await processUserReply(text);
+      } else {
+        await processSubmission(selectedKindKey.value, isWarm.value, text);
+      }
     }}
   });
 
-  layout.append(logContainer, controlToolbar, doc0Input, sendBtn);
+  const inputWorkspace = h('div', { style: 'display: flex; flex-direction: column;' },
+    controlToolbar, contextSummaryBar, hintBar, doc0Input, sendBtn
+  );
+
+  layout.append(logContainer, manualWorkspace, inputWorkspace);
+
+  // ─── REACTIVE MOUNTING & STATE BINDINGS ─────────────────────────────────
+
+  createEffect(() => {
+    const cId = selectedCircuitId.value;
+    const circ = activeCircuit.value;
+
+    if (!cId || !circ) {
+      currentRenderedCircuitId = null;
+      logContainer.replaceChildren(h('div', {
+        style: 'color: var(--text-muted); font-style: italic; text-align: center; padding: 30px;',
+        textContent: '🔒 Select a Circuit from the context graph to initialize Chat.'
+      }));
+      return;
+    }
+
+    if (currentRenderedCircuitId !== circ.id) {
+      currentRenderedCircuitId = circ.id;
+      doc0Input.value = circ.doc0 || '';
+    }
+  });
 
   // Populate System Kinds Dropdown
   createEffect(() => {
@@ -89,9 +182,52 @@ export function mountChatScreen(container: HTMLElement): () => void {
     });
   });
 
-  // Render Transcript History
+  // Update Hint Bar
   createEffect(() => {
-    const rows = ledgerGrid.value;
+    const activeKind = resolveKind(selectedKindKey.value);
+    hintBar.textContent = activeKind ? `${activeKind.alias} — ${activeKind.hint}` : '';
+  });
+
+  // Update Context Summary Bar
+  createEffect(() => {
+    const inclusions = resolvedInclusionForActiveView();
+    const activeDocCount = inclusions.filter(i => i.A || i.P || i.U || i.I || i.R).length;
+    const activeLangs = activeCircuitLangs.value.filter(s => s.active).length;
+
+    contextSummaryBar.replaceChildren(
+      h('span', { textContent: `📎 Attached Docs: ${activeDocCount} | 📖 Active Lexicons: ${activeLangs}` }),
+      manageDocsBtn
+    );
+  });
+
+  // Toggle Manual Mode vs Standard Input Workspace
+  createEffect(() => {
+    const state = uiState.value;
+    if (state === 'awaiting_llm_paste') {
+      manualWorkspace.style.display = 'block';
+      manualPromptArea.value = manualPrompt.value;
+      inputWorkspace.style.display = 'none';
+    } else {
+      manualWorkspace.style.display = 'none';
+      inputWorkspace.style.display = 'flex';
+    }
+
+    if (state === 'halted') {
+      sendBtn.textContent = '↺ Reset Engine';
+      sendBtn.style.background = 'var(--health-halted)';
+    } else if (state === 'awaiting_user') {
+      sendBtn.textContent = 'Send Reply →';
+      sendBtn.style.background = 'var(--role-bridge)';
+    } else {
+      const activeAlias = resolveKindAlias(selectedKindKey.value);
+      sendBtn.textContent = `Send toward ${activeAlias} →`;
+      sendBtn.style.background = 'var(--role-bridge)';
+    }
+  });
+
+  // Render Transcript History Bubbles
+  createEffect(() => {
+    const rows = ledgerGrid.value.filter(r => r.direction !== 'system');
     logContainer.replaceChildren();
 
     if (rows.length === 0) {
@@ -102,18 +238,126 @@ export function mountChatScreen(container: HTMLElement): () => void {
       return;
     }
 
-    rows.forEach(row => {
-      const isOut = row.direction === 'out';
-      const alias = resolveKindAlias(row.kind);
+    const turnGroups = new Map<number, LedgerRow[]>();
+    rows.forEach(r => {
+      const group = turnGroups.get(r.turnNumber) || [];
+      group.push(r);
+      turnGroups.set(r.turnNumber, group);
+    });
 
-      const bubble = h('div', {
-        style: `margin-bottom: 8px; padding: 10px 12px; border-radius: 6px; border: 1px solid var(--border-subtle); background: ${isOut ? 'var(--bg-elevated)' : 'var(--bg-panel)'};`
-      },
-        h('div', { style: 'font-weight: bold; font-size: 0.75rem; color: var(--role-bridge); margin-bottom: 4px;' }, `[${isOut ? 'OUT' : 'IN'}] ${alias.toUpperCase()}`),
-        h('div', { style: 'white-space: pre-wrap; font-family: var(--font-mono); font-size: 0.85rem;', textContent: row.body })
-      );
+    turnGroups.forEach((turnRows, turnNum) => {
+      const turnCard = h('div', { 
+        style: 'margin-bottom: 16px; border-left: 3px solid var(--border-strong); padding-left: 12px;' 
+      });
 
-      logContainer.appendChild(bubble);
+      turnCard.appendChild(h('div', {
+        style: 'font-size: 0.75rem; font-weight: bold; color: var(--text-muted); font-family: var(--font-mono); margin-bottom: 6px;',
+        textContent: `TURN #${turnNum}`
+      }));
+
+      turnRows.forEach(row => {
+        const isOut = row.direction === 'out';
+        const alias = resolveKindAlias(row.kind);
+
+        const bubble = h('div', {
+          style: `margin-bottom: 8px; padding: 10px 12px; border-radius: 6px; border: 1px solid var(--border-subtle); background: ${isOut ? 'var(--bg-elevated)' : 'var(--bg-panel)'}; ${isOut ? 'margin-left: 20px;' : 'margin-right: 20px;'}`
+        });
+
+        const headerBadge = h('div', {
+          style: 'display: flex; justify-content: space-between; font-size: 0.75rem; font-family: var(--font-mono); margin-bottom: 6px; color: var(--text-secondary); border-bottom: 1px dashed var(--border-subtle); padding-bottom: 4px;'
+        },
+          h('span', { style: 'font-weight: bold; color: var(--role-bridge);', textContent: `[${isOut ? 'OUT' : 'IN'}] ${alias.toUpperCase()}` }),
+          h('span', { textContent: row.header || new Date(row.createdAt).toLocaleTimeString() })
+        );
+
+        const bodyEl = h('div', {
+          style: 'white-space: pre-wrap; font-family: var(--font-mono); font-size: 0.85rem; color: var(--text-primary);',
+          textContent: row.body
+        });
+
+        let artifactCard: HTMLElement | null = null;
+        if (row.ptrCycle) {
+          artifactCard = h('div', {
+            style: 'margin-top: 8px; padding: 8px; background: rgba(34, 197, 94, 0.1); border: 1px solid var(--health-clear); border-radius: 4px; font-size: 0.8rem; color: var(--health-clear);'
+          },
+            h('strong', { textContent: `✓ Phase Transition Record (Cycle #${row.ptrCycle}.${row.ptrSeq})` }),
+            h('div', { textContent: `Stance: ${row.ptrStance} | Health: ${row.ptrHealth}` })
+          );
+        } else if (row.body.includes('[RAISE]')) {
+          artifactCard = h('div', {
+            style: 'margin-top: 8px; padding: 8px; background: rgba(234, 179, 8, 0.1); border: 1px solid var(--health-raises); border-radius: 4px; font-size: 0.8rem; color: var(--health-raises);',
+            textContent: '⚡ Structural RAISE Detected — Material Shear'
+          });
+        } else if (row.body.includes('# HALT')) {
+          artifactCard = h('div', {
+            style: 'margin-top: 8px; padding: 8px; background: rgba(239, 68, 68, 0.1); border: 1px solid var(--health-halted); border-radius: 4px; font-size: 0.8rem; color: var(--health-halted);',
+            textContent: '🛑 Terminal HALT — Execution Boundary Intercepted'
+          });
+        }
+
+        const actionsBar = h('div', { style: 'display: flex; gap: 10px; margin-top: 8px; font-size: 0.75rem; justify-content: flex-end;' });
+
+        if (isOut) {
+          const copyBtn = h('button', {
+            textContent: '📋 Copy Prompt',
+            style: 'background: transparent; border: none; color: var(--role-bridge); cursor: pointer; font-weight: bold;',
+            on: { click: () => {
+              navigator.clipboard.writeText(row.body);
+              copyBtn.textContent = 'Copied!';
+              setTimeout(() => copyBtn.textContent = '📋 Copy Prompt', 2000);
+            }}
+          });
+
+          const editBtn = h('button', {
+            textContent: '✎ Edit Prompt',
+            style: 'background: transparent; border: none; color: var(--text-muted); cursor: pointer;',
+            on: { click: () => editingRowId.value = editingRowId.value === row.id ? null : row.id }
+          });
+
+          actionsBar.append(copyBtn, editBtn);
+        } else {
+          const isKept = row.kept ?? true;
+          const keptLabel = h('label', {
+            style: `cursor: pointer; font-weight: bold; color: ${isKept ? 'var(--health-clear)' : 'var(--text-muted)'}; display: flex; align-items: center; gap: 4px;`
+          },
+            h('input', {
+              type: 'checkbox',
+              checked: isKept,
+              on: { change: async () => {
+                const cId = selectedCircuitId.peek();
+                if (cId) await markLedgerAnswerKept(cId, row.id);
+              }}
+            }),
+            isKept ? '✓ Kept Answer (Context Active)' : 'Alternate Answer'
+          );
+          actionsBar.appendChild(keptLabel);
+        }
+
+        bubble.append(headerBadge, bodyEl);
+        if (artifactCard) bubble.appendChild(artifactCard);
+        bubble.appendChild(actionsBar);
+
+        if (editingRowId.value === row.id) {
+          const editArea = h('textarea', {
+            value: row.body,
+            style: 'width: 100%; height: 80px; margin-top: 8px; font-family: var(--font-mono); font-size: 0.85rem;'
+          });
+          const saveEditBtn = h('button', {
+            textContent: 'Save Edit',
+            className: 'k4-btn-primary',
+            style: 'margin-top: 4px; padding: 4px 10px; font-size: 0.75rem;',
+            on: { click: async () => {
+              await editLedgerRow(row.id, { body: editArea.value });
+              editingRowId.value = null;
+            }}
+          });
+          bubble.append(editArea, saveEditBtn);
+        }
+
+        turnCard.appendChild(bubble);
+      });
+
+      logContainer.appendChild(turnCard);
     });
 
     logContainer.scrollTop = logContainer.scrollHeight;

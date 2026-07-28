@@ -1,0 +1,27 @@
+{
+  "providers": [
+    {
+      "id": "openai-gpt-4o",
+      "name": "OpenAI GPT-4o",
+      "transport": "openai-chat",
+      "endpoint": "https://api.openai.com/v1/chat/completions",
+      "model": "gpt-4o",
+      "temperature": { "text": 0.3, "json": 0.1 },
+      "supportsJsonMode": true,
+      "requiresApiKey": true,
+      "notes": "OpenAI-compatible servers (Azure OpenAI, LM Studio, llama.cpp) work with this transport by setting apiBaseUrl on the world."
+    },
+    {
+      "id": "chrome-on-device",
+      "name": "Chrome On-Device AI",
+      "transport": "window-ai",
+      "endpoint": null,
+      "model": null,
+      "temperature": null,
+      "supportsJsonMode": false,
+      "requiresApiKey": false,
+      "notes": "Uses window.ai.languageModel. Requires Chrome with the built-in AI feature enabled."
+    }
+  ],
+  "defaultProviderId": "openai-gpt-4o"
+}

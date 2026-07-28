@@ -45,7 +45,7 @@ export class LedgerVFS {
 
     const lineageIds = lineage.map(c => c.id);
 
-    // 1. EXPLICIT 5-COLUMN GRID INCLUSION (No guessing)
+    // 1. EXPLICIT 5-COLUMN GRID INCLUSION
     const inclusions = resolvedInclusionForActiveView();
     const docs: ResolvedManifest['documents'] = [];
 
@@ -73,15 +73,22 @@ export class LedgerVFS {
       }
     }
 
-    // 2. Gather Vocabularies from Active Languages across Lineage
-    const vocabularies: ResolvedVocabTerm[] = [];
+    // 2. EXPLICIT LANGUAGE OVERRIDE RESOLUTION ACROSS LINEAGE
     const activeLangIds = new Set<string>();
+    const rootToLeafLineage = lineage.slice().reverse();
 
-    for (const id of lineageIds) {
-      const sels = await vfsDb.getCircuitLangSelections(id);
-      sels.filter(s => s.active).forEach(s => activeLangIds.add(s.languageId));
+    for (const node of rootToLeafLineage) {
+      const sels = await vfsDb.getCircuitLangSelections(node.id);
+      for (const s of sels) {
+        if (s.active) {
+          activeLangIds.add(s.languageId);
+        } else {
+          activeLangIds.delete(s.languageId);
+        }
+      }
     }
 
+    const vocabularies: ResolvedVocabTerm[] = [];
     for (const langId of activeLangIds) {
       const terms = await vfsDb.getVocabulary(langId);
       for (const t of terms) {
@@ -116,17 +123,20 @@ export class LedgerVFS {
     content: string,
     defaults: { A?: boolean; P?: boolean; U?: boolean; I?: boolean; R?: boolean },
     id?: string,
-    kind: 'source' | 'derived' = 'source'
+    kind: 'source' | 'derived' = 'source',
+    description?: string
   ): Promise<CircuitNode> {
     const activeC = activeCircuit.peek();
     const now = Date.now();
 
+    const existingNode = id ? await vfsDb.getCircuit(id) : undefined;
+
     const docNode: CircuitNode = {
       id: id || `doc-${now}-${Math.random().toString(36).substring(2, 7)}`,
-      priorId: activeC ? activeC.id : null,
+      priorId: existingNode ? existingNode.priorId : (activeC ? activeC.id : null),
       specialization: 'document',
       name,
-      description: '',
+      description: description !== undefined ? description : (existingNode?.description || ''),
       doc0: content,
       physics: { omega: 1.0, r: 10, l: 10, c: 0.1 },
       activeFace: 'P',
@@ -140,7 +150,7 @@ export class LedgerVFS {
         defaultR: defaults.R ?? false,
         kind,
       },
-      createdAt: now,
+      createdAt: existingNode?.createdAt || now,
       updatedAt: now,
     };
 

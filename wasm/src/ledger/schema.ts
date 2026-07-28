@@ -14,7 +14,7 @@ export type CircuitSpecialization =
 
 // ─── WORLD CLASS SETTINGS ───────────────────────────────────────────────────
 export interface WorldSettings {
-  apiProvider: 'manual' | 'auto' | 'openai' | 'anthropic' | 'custom';
+  apiProvider: string;        // 'manual' | 'default' | any catalog id from src/config.json
   apiKey: string;
   apiBaseUrl: string;
   worldDirectives: string;
@@ -174,7 +174,8 @@ export interface WorldFrameState {
 
 // ─── GLOBAL APP SETTINGS ───────────────────────────────────────────────────
 export interface SystemSettings {
-  autoLoadSeedData: boolean;      // Default: false
-  seedDataFileNames: string;     // e.g. "seed-data.json"
+  autoLoadSeedData: boolean;
+  seedDataFileNames: string;
   telemetryMaxEntries: number;
+  defaultProviderId?: string;   // '' or missing → catalog default from src/config.json
 }
