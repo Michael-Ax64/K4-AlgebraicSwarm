@@ -7,7 +7,7 @@ import {
 } from '../ledger/grid-state';
 import { vfsDb } from '../ledger/fs';
 import { K4Type, ElementRole, Vocabulary } from '../ledger/schema';
-import { h } from '../dom';
+import { h, createAutosizingTextarea } from '../dom';
 
 export function mountLanguagesScreen(container: HTMLElement): () => void {
   const layout = h('div', { 
@@ -251,17 +251,6 @@ export function mountLanguagesScreen(container: HTMLElement): () => void {
   });
 
   return () => { container.innerHTML = ''; };
-}
-
-function createAutosizingTextarea(props: any): HTMLTextAreaElement {
-  const area = h('textarea', props) as HTMLTextAreaElement;
-  const autoResize = () => {
-    area.style.height = 'auto';
-    area.style.height = `${area.scrollHeight}px`;
-  };
-  area.addEventListener('input', autoResize);
-  setTimeout(autoResize, 0);
-  return area;
 }
 
 const labelStyle = 'font-weight: bold; color: var(--text-secondary); display: block; margin-bottom: 4px; font-size: 0.85rem;';

@@ -1,5 +1,5 @@
 // wasm/src/screens/kinds.ts
-//
+
 // Global screen exposing the AppKind registry. Composes Project → World
 // sections (matches composedKinds ordering — nearest scope first). Rows are
 // grouped by `family` inside each section. Template-dispatched Kinds edit
@@ -17,7 +17,7 @@ import { createEffect, Signal } from '../reactive';
 import { screenRegistry } from './registry';
 import { systemKindsGrid, upsertKindValidated } from '../kinds/kinds-registry';
 import { AppKind } from '../ledger/schema';
-import { h } from '../dom';
+import { h, createAutosizingTextarea } from '../dom';
 
 export function mountKindsScreen(container: HTMLElement): () => void {
   const expandedKindId = new Signal<string | null>(null);
@@ -154,17 +154,7 @@ function renderKindCard(k: AppKind, isExpanded: boolean, toggle: () => void): HT
   return card;
 }
 
-function createAutosizingTextarea(props: any): HTMLTextAreaElement {
-  const area = h('textarea', props) as HTMLTextAreaElement;
-  const autoResize = () => {
-    area.style.height = 'auto';
-    area.style.height = `${area.scrollHeight}px`;
-  };
-  area.addEventListener('input', autoResize);
-  setTimeout(autoResize, 0);
-  return area;
-}
-
 const labelStyle = 'font-weight: bold; color: var(--text-secondary); display: block; margin-bottom: 4px; font-size: 0.8rem;';
 
 screenRegistry.register({ id: 'kinds', label: 'Kinds', order: 20, mount: mountKindsScreen });
+

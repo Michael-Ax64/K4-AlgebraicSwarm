@@ -29,6 +29,7 @@ function logManifold(type: 'info' | 'warn' | 'error', source: 'system' | 'engine
   ];
 }
 
+
 export async function bootAirlock() {
   try {
     await init();
@@ -74,20 +75,6 @@ async function persistEngineStateForCircuit(circuitId: string) {
     const rawState = engine.vfs_state;
     await vfsDb.runTx('engine_state', 'readwrite', s => s.put({ id: circuitId, raw: rawState }));
   }
-}
-
-export function resetEngineRun(): void {
-  if (engine && typeof engine.reset_run === 'function') {
-    engine.reset_run();
-  }
-  uiState.value = 'idle';
-}
-
-export function resetEngineAll(): void {
-  if (engine && typeof engine.reset_all === 'function') {
-    engine.reset_all();
-  }
-  uiState.value = 'idle';
 }
 
 export function extractHeader(text: string): { header: string; body: string } {
@@ -253,56 +240,62 @@ async function runEngineLoop(initialCommand: any, parentTurnId?: string, kindKey
   let command = initialCommand;
   const cId = selectedCircuitId.peek();
 
-  while (command) {
-    switch (command.type) {
-      case 'FetchLLM': {
-        const { apiConfig } = cId ? await resolveCircuitLineage(cId) : { apiConfig: null };
-        if (!apiConfig || apiConfig.apiProvider === 'manual') {
-          manualPrompt.value = command.prompt;
-          uiState.value = 'awaiting_llm_paste';
+  try {
+    while (command) {
+      switch (command.type) {
+        case 'FetchLLM': {
+          const { apiConfig } = cId ? await resolveCircuitLineage(cId) : { apiConfig: null };
+          if (!apiConfig || apiConfig.apiProvider === 'manual') {
+            manualPrompt.value = command.prompt;
+            uiState.value = 'awaiting_llm_paste';
+            return;
+          }
+          try {
+            const llmResponse = await callBuiltInAPI(apiConfig as any, command.prompt, false);
+
+            if (cId) {
+              const { header, body } = extractHeader(llmResponse);
+              await beginLedgerTurn({
+                circuitId: cId,
+                kind: kindKey,
+                direction: 'in',
+                header,
+                body,
+                snapshot: { doc0Snapshot: '', attachedDocIds: [], activeLanguageIds: [], lineagePath: [], warm: false },
+                parentTurnId,
+              });
+              // Mid-loop checkpoint: persist after each successful LLM turn lands to the ledger.
+              // The final persist happens in the outer try/finally regardless of exit path.
+              await persistEngineStateForCircuit(cId);
+            }
+
+            command = engine.step(llmResponse);
+          } catch (err) {
+            logManifold('error', 'bridge', `API Call Failed: ${err}`);
+            throw new Error(`API failed: ${err}`);
+          }
+          break;
+        }
+        case 'AwaitUser': {
+          chatLog.value = [...chatLog.value, { role: 'system', text: command.text }];
+          uiState.value = 'awaiting_user';
           return;
         }
-        try {
-          const llmResponse = await callBuiltInAPI(apiConfig as any, command.prompt, false);
-
-          if (cId) {
-            const { header, body } = extractHeader(llmResponse);
-            await beginLedgerTurn({
-              circuitId: cId,
-              kind: kindKey,
-              direction: 'in',
-              header,
-              body,
-              snapshot: { doc0Snapshot: '', attachedDocIds: [], activeLanguageIds: [], lineagePath: [], warm: false },
-              parentTurnId,
-            });
-            await persistEngineStateForCircuit(cId);
-          }
-
-          command = engine.step(llmResponse);
-        } catch (err) {
-          logManifold('error', 'bridge', `API Call Failed: ${err}`);
-          throw new Error(`API failed: ${err}`);
-        }
-        break;
+        case 'Halt':
+          uiState.value = 'halted';
+          return;
+        case 'Success':
+          uiState.value = 'idle';
+          return;
+        default:
+          uiState.value = 'halted';
+          return;
       }
-      case 'AwaitUser': {
-        chatLog.value = [...chatLog.value, { role: 'system', text: command.text }];
-        uiState.value = 'awaiting_user';
-        if (cId) await persistEngineStateForCircuit(cId);
-        return;
-      }
-      case 'Halt':
-        uiState.value = 'halted';
-        if (cId) await persistEngineStateForCircuit(cId);
-        return;
-      case 'Success':
-        uiState.value = 'idle';
-        if (cId) await persistEngineStateForCircuit(cId);
-        return;
-      default:
-        uiState.value = 'halted';
-        return;
     }
+  } finally {
+    // Every exit path — AwaitUser, Halt, Success, default, or an uncaught throw —
+    // persists the engine's current state for this circuit.
+    if (cId) await persistEngineStateForCircuit(cId);
   }
 }
+

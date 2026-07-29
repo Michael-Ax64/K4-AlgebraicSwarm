@@ -6,7 +6,7 @@ import { selectedDocumentId, documentsGrid, refreshAllGrids } from '../ledger/gr
 import { ledgerVfs } from '../ledger/vfs-wrapper';
 import { vfsDb } from '../ledger/fs';
 import { pushScreen } from '../router';
-import { h } from '../dom';
+import { h, createAutosizingTextarea } from '../dom';
 
 export function mountDocEditorScreen(container: HTMLElement): () => void {
   const layout = h('div', { style: 'padding: 20px; height: 100%; display: flex; flex-direction: column;' });
@@ -149,18 +149,6 @@ export function mountDocEditorScreen(container: HTMLElement): () => void {
   return () => { container.innerHTML = ''; };
 }
 
-function createAutosizingTextarea(props: any): HTMLTextAreaElement {
-  const area = h('textarea', props) as HTMLTextAreaElement;
-  const autoResize = () => {
-    area.style.height = 'auto';
-    area.style.height = `${area.scrollHeight}px`;
-  };
-  area.addEventListener('input', autoResize);
-  setTimeout(autoResize, 0);
-  return area;
-}
-
 const labelStyle = 'font-weight: bold; color: var(--text-secondary); display: block; margin-bottom: 4px; font-size: 0.85rem;';
 
 screenRegistry.register({ id: 'doc-editor', label: 'Document Editor', order: 103, mount: mountDocEditorScreen });
-

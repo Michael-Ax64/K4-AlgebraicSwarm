@@ -50,6 +50,17 @@ impl PromptRole {
     }
 }
 
+impl From<HeaderKind> for PromptRole {
+    fn from(kind: HeaderKind) -> Self {
+        match kind {
+            HeaderKind::Validator  => PromptRole::Validator,
+            HeaderKind::Bridge     => PromptRole::Bridge,
+            HeaderKind::Controller => PromptRole::Controller,
+            HeaderKind::Paradox    => PromptRole::Paradox,
+        }
+    }
+}
+
 fn detect_routing_target(payload: &str) -> Option<PromptRole> {
     if payload.contains("K4-AlgebraicIntakeValidator") { return Some(PromptRole::Validator); }
     if payload.contains("K4-AlgebraicIntentBridge")    { return Some(PromptRole::Bridge); }
@@ -177,17 +188,10 @@ impl K4Engine {
 
 impl K4Engine {
     pub fn step_command(&mut self, input: &str) -> JsCommand {
+        // Any turn presenting a [STATE] header is card-landing regardless of mode.
         if input.contains("[STATE]") {
             self.mode = StepMode::ExpectLlm;
-            let parsed = match self.parser.parse(input) {
-                Ok(p) => p,
-                Err(e) => {
-                    return JsCommand::Halt {
-                        reason: format!("Structural Shear: {:?}", e),
-                    };
-                }
-            };
-            return self.evaluate_artifact(parsed);
+            return self.land_card(input);
         }
 
         match self.mode {
@@ -202,21 +206,23 @@ impl K4Engine {
                 let prompt = self.compile_role_prompt(role, input);
                 JsCommand::FetchLLM { prompt }
             }
-            StepMode::ExpectLlm => {
-                let parsed = match self.parser.parse(input) {
-                    Ok(p) => p,
-                    Err(e) => {
-                        return JsCommand::Halt {
-                            reason: format!("Structural Shear: {:?}", e),
-                        };
-                    }
-                };
-                self.evaluate_artifact(parsed)
-            }
+            StepMode::ExpectLlm => self.land_card(input),
         }
     }
 
     pub fn mode(&self) -> StepMode { self.mode }
+
+    /// Try to land an incoming card: parse its header, route into evaluate_artifact.
+    /// A card whose header can't be classified halts with Structural Shear —
+    /// the card arrived but had no slot to land in.
+    fn land_card(&mut self, input: &str) -> JsCommand {
+        match self.parser.parse(input) {
+            Ok(parsed) => self.evaluate_artifact(parsed),
+            Err(e) => JsCommand::Halt {
+                reason: format!("Structural Shear: {:?}", e),
+            },
+        }
+    }
 
     fn evaluate_artifact(&mut self, parsed: ParsedTurn) -> JsCommand {
         let header_kind = parsed.header.kind();
@@ -245,12 +251,7 @@ impl K4Engine {
             },
 
             TerminalArtifact::PlainText(text) => {
-                self.last_role = match header_kind {
-                    HeaderKind::Validator  => PromptRole::Validator,
-                    HeaderKind::Bridge     => PromptRole::Bridge,
-                    HeaderKind::Controller => PromptRole::Controller,
-                    HeaderKind::Paradox    => PromptRole::Paradox,
-                };
+                self.last_role = header_kind.into();
                 self.mode = StepMode::ExpectUser;
                 JsCommand::AwaitUser { text }
             }
@@ -269,20 +270,16 @@ impl K4Engine {
             }
 
             TerminalArtifact::Raise { target, reason } => {
-                match parsed.header.as_controller() {
-                    Some(c) => self.handle_raise(target, reason, &c.clone()),
-                    None => JsCommand::Halt {
-                        reason: format!("[RAISE] artifact from non-Controller header ({:?}); ignored", header_kind),
-                    },
+                match self.require_controller_header(&parsed.header, "[RAISE]") {
+                    Ok(c) => self.handle_raise(target, reason, &c),
+                    Err(halt) => halt,
                 }
             }
 
             TerminalArtifact::FaceRunnerPrompt(content) => {
-                match parsed.header.as_controller() {
-                    Some(c) => self.handle_face_work(c.clone(), content),
-                    None => JsCommand::Halt {
-                        reason: format!("FACE-RUNNER PROMPT from non-Controller header ({:?})", header_kind),
-                    },
+                match self.require_controller_header(&parsed.header, "FACE-RUNNER PROMPT") {
+                    Ok(c) => self.handle_face_work(c, content),
+                    Err(halt) => halt,
                 }
             }
 
@@ -298,20 +295,37 @@ impl K4Engine {
             }
 
             TerminalArtifact::PhaseTransitionRecord(payload) => {
-                match parsed.header.as_controller() {
-                    Some(c) => {
-                        self.vfs.write_ptr(&c.clone(), &self.surface, ThreadAction::Continue, None);
+                match self.require_controller_header(&parsed.header, "PTR") {
+                    Ok(c) => {
+                        self.vfs.write_ptr(&c, &self.surface, ThreadAction::Continue, None);
                         self.mode = StepMode::ColdStart;
                         self.current_state = None;
                         JsCommand::Success {
                             message: format!("Phase Transition Record committed. Payload: {}", payload),
                         }
                     }
-                    None => JsCommand::Halt {
-                        reason: format!("PTR artifact from non-Controller header ({:?})", header_kind),
-                    },
+                    Err(halt) => halt,
                 }
             }
+        }
+    }
+
+    /// A card whose artifact is Controller-only (`[RAISE]`, `FACE-RUNNER PROMPT`, `PTR`)
+    /// landed under a non-Controller header — the shape's in the wrong slot.
+    /// Return the ControllerHeader on match, or a shaped Halt on mismatch.
+    fn require_controller_header(
+        &self,
+        header: &ParsedHeader,
+        artifact_label: &str,
+    ) -> Result<ControllerHeader, JsCommand> {
+        match header.as_controller() {
+            Some(c) => Ok(c.clone()),
+            None => Err(JsCommand::Halt {
+                reason: format!(
+                    "{} artifact from non-Controller header ({:?})",
+                    artifact_label, header.kind()
+                ),
+            }),
         }
     }
 
@@ -359,8 +373,20 @@ impl K4Engine {
         }
     }
 
+    /// Domain-context prefix block. Empty when no context is set; otherwise a labelled
+    /// section injected between the harness prompt and the payload marker.
+    /// Callers pass the label because each harness names the block differently
+    /// (Validator: "CONTEXTUAL DICTIONARY"; Bridge/Controller/Paradox: "DOMAIN MATRIX").
+    fn ctx_block(&self, label: &str) -> String {
+        if self.domain_context.is_empty() {
+            String::new()
+        } else {
+            format!("\n\n[{}]\n{}", label, self.domain_context)
+        }
+    }
+
     fn compile_validator_prompt(&self, user_input: &str) -> String {
-        let ctx = if self.domain_context.is_empty() { String::new() } else { format!("\n\n[CONTEXTUAL DICTIONARY]\n{}", self.domain_context) };
+        let ctx = self.ctx_block("CONTEXTUAL DICTIONARY");
         format!("{}{}\n\n# SUBMISSION\n{}", PROMPT_VALIDATOR, ctx, user_input)
     }
 
@@ -368,7 +394,7 @@ impl K4Engine {
         let (last_stance, legal_facets) = self.vfs.get_braid_context();
         let stance_str = last_stance.map_or("NONE".to_string(), |s| s.equation_name().to_string());
         let facets_str = if legal_facets.len() == 12 { "ALL".to_string() } else { format!("{:?}", legal_facets) };
-        let ctx = if self.domain_context.is_empty() { String::new() } else { format!("\n\n[DOMAIN MATRIX]\n{}", self.domain_context) };
+        let ctx = self.ctx_block("DOMAIN MATRIX");
 
         format!(
             "{}{}\n\n[BRAID-CONTEXT: last-stance {} | legal-facets {}]\n\n# ROUTING REQUEST\n{}",
@@ -377,23 +403,36 @@ impl K4Engine {
     }
 
     fn compile_controller_prompt(&self, payload: &str) -> String {
-        let ctx = if self.domain_context.is_empty() { String::new() } else { format!("\n\n[DOMAIN MATRIX]\n{}", self.domain_context) };
+        let ctx = self.ctx_block("DOMAIN MATRIX");
         format!("{}{}\n\n# PAYLOAD\n{}", PROMPT_CONTROLLER, ctx, payload)
     }
 
-    fn compile_paradox_prompt(&self, payload: &str) -> String {
-        let ctx = if self.domain_context.is_empty() { String::new() } else { format!("\n\n[DOMAIN MATRIX]\n{}", self.domain_context) };
+    /// First-entry Paradox compile — called when routing arrives at Paradox from
+    /// another role (typically Bridge → Paradox via RoutingRequest). Plain REQUEST
+    /// section, no recognition framing.
+    fn compile_paradox_initial(&self, payload: &str) -> String {
+        let ctx = self.ctx_block("DOMAIN MATRIX");
+        format!("{}{}\n\n# REQUEST\n{}", PROMPT_PARADOX, ctx, payload)
+    }
 
-        if self.last_role == PromptRole::Paradox {
-            format!(
-                "{}{}\n\n[E3 RECOGNITION READ]\nThe operator responded to the Held Paradoxes:\n\"{}\"\n\
-                 If they 'ring' on a tension, step to P-ROOM (shift AT, increment RUNG, enumerate from there).\n\
-                 If 'clang', offer next, or E-EXIT with Possibility Map.",
-                PROMPT_PARADOX, ctx, payload
-            )
-        } else {
-            format!("{}{}\n\n# REQUEST\n{}", PROMPT_PARADOX, ctx, payload)
-        }
+    /// Recognition-read Paradox compile — called when the operator is continuing an
+    /// existing paradox chain and their reply must be read against the previously
+    /// held tensions (E3: ring/clang → P-ROOM step or E-EXIT).
+    ///
+    /// NOT WIRED YET. This is the compile step for a chain-continuation operation
+    /// that the workbench doesn't yet expose. When chat-click-to-continue lands,
+    /// the workbench will reconstruct the paradox chain from the ledger and call
+    /// this method directly; the engine has no ambient way to detect "am I in a
+    /// paradox chain" and shouldn't invent one.
+    #[allow(dead_code)]
+    fn compile_paradox_recognition(&self, payload: &str) -> String {
+        let ctx = self.ctx_block("DOMAIN MATRIX");
+        format!(
+            "{}{}\n\n[E3 RECOGNITION READ]\nThe operator responded to the Held Paradoxes:\n\"{}\"\n\
+             If they 'ring' on a tension, step to P-ROOM (shift AT, increment RUNG, enumerate from there).\n\
+             If 'clang', offer next, or E-EXIT with Possibility Map.",
+            PROMPT_PARADOX, ctx, payload
+        )
     }
 
     fn compile_role_prompt(&mut self, role: PromptRole, payload: &str) -> String {
@@ -402,7 +441,7 @@ impl K4Engine {
             PromptRole::Validator  => self.compile_validator_prompt(payload),
             PromptRole::Bridge     => self.compile_bridge_prompt(payload),
             PromptRole::Controller => self.compile_controller_prompt(payload),
-            PromptRole::Paradox    => self.compile_paradox_prompt(payload),
+            PromptRole::Paradox    => self.compile_paradox_initial(payload),
         }
     }
 

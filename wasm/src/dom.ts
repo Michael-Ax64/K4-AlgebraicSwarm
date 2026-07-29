@@ -68,3 +68,17 @@ export function h<K extends keyof HTMLElementTagNameMap>(
     return el;
 }
 
+/**
+ * A textarea that grows and shrinks to fit its content on every input event.
+ * Consolidates a helper that was previously copy-pasted across four screens.
+ */
+export function createAutosizingTextarea(props: ElementProps = {}): HTMLTextAreaElement {
+    const area = h('textarea', props) as HTMLTextAreaElement;
+    const autoResize = () => {
+        area.style.height = 'auto';
+        area.style.height = `${area.scrollHeight}px`;
+    };
+    area.addEventListener('input', autoResize);
+    setTimeout(autoResize, 0);
+    return area;
+}

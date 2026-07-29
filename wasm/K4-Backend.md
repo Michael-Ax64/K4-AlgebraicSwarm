@@ -40,19 +40,20 @@ The polyglot parser reconciles this. `parse_stance_from_name` accepts every labe
 
 ## The parser — `parser.rs`
 
-The parser is the message-boundary airlock. Its docstring says it plainly: *"The header shapes don't disagree; they route."* An `[STATE] ...` line coming from the LLM is not free text; it's a station-marker. Which fields it contains name which of the four instruments emitted it.
+The parser is the card-landing surface. Its docstring says it plainly: *"The header shapes don't disagree; they route."* An `[STATE] ...` line coming from the LLM is not free text; it's a card, and its header names which slot it belongs in. The parser reads the header shape and lands the card. There is no gatekeeping — a card that arrives is a card the workbench holds. The parser's job is *routing to slot*, not validating admissibility.
 
-`parse_and_validate_header` classifies by field presence:
+`parse_and_validate_header` lands by field presence:
 
 ```
-GATE present                          → ValidatorHeader
-MODE = paradox                        → ParadoxHeader
-PHASE present, CYCLE absent           → BridgeHeader
-CYCLE present                         → ControllerHeader
-otherwise                             → MalformedHeader error
+GATE present                          → Validator slot
+MODE = paradox                        → Paradox slot
+PHASE present, CYCLE absent           → Bridge slot
+CYCLE present                         → Controller slot
+otherwise                             → MalformedHeader (still a landing;
+                                        the engine reports and continues)
 ```
 
-Each variant then goes to its own parser (`parse_validator_header`, `parse_bridge_header`, `parse_controller_header`, `parse_paradox_header`), which returns a typed struct — `GatePhase`, `BindStatus`, `SubmissionStatus`, `RouteTarget` for the Validator; `BridgePhase`, `LockState`, `PhaseDirection`, `QFactor` for the Bridge; and so on. The Bridge cannot say `CYCLE` because the Bridge is pre-cycle; the Controller cannot say `RHO` because coherence is upstream work. The type system enforces which fields can even parse in which header.
+Each slot has its own reader (`parse_validator_header`, `parse_bridge_header`, `parse_controller_header`, `parse_paradox_header`), which returns a typed struct — `GatePhase`, `BindStatus`, `SubmissionStatus`, `RouteTarget` for the Validator; `BridgePhase`, `LockState`, `PhaseDirection`, `QFactor` for the Bridge; and so on. The Bridge slot cannot carry `CYCLE` because the Bridge is pre-cycle; the Controller slot cannot carry `RHO` because coherence is upstream work. The type system enforces the field vocabulary each slot accepts. A card whose header is underspecified for its slot lands anyway — as a shape the workbench then holds. Whether that shape is enough for the next operation to fire is a question the operator answers by working the bench, not one the parser answers by rejecting.
 
 Below the header, `classify_artifact` reads the body and yields a `TerminalArtifact`:
 
@@ -113,7 +114,7 @@ const PROMPT_PARADOX:    &str = include_str!("../../prompts/AlgebraicParadoxEngi
 
 This is the Cold-Start Rule: a blank LLM instance receives the entire algebraic harness inline every turn. There is no context memory to prime, no fine-tuned checkpoint. Each turn is stateless from the LLM's perspective; state lives in the engine.
 
-`compile_bridge_prompt` is the one that reads the VFS to inject Braid context — the last committed stance's name and the four Gray-code-adjacent facet IDs — as `[BRAID-CONTEXT: last-stance <name> | legal-facets [1, 3, 9, 11]]`. Under the current numbering, Leverage's neighbors are Momentum (2), Synthesis (3), Capacity (9), and Accounting (11). The Bridge is geometrically forbidden from proposing a diagonal leap.
+`compile_bridge_prompt` is the one that reads the VFS to inject Braid context — the last committed stance's name and the four Gray-code-adjacent facet IDs — as `[BRAID-CONTEXT: last-stance <name> | legal-facets [2, 3, 9, 11]]`. Under the current numbering, Leverage's neighbors are Momentum (2), Synthesis (3), Capacity (9), and Accounting (11). The Bridge is geometrically forbidden from proposing a diagonal leap.
 
 `compile_face_runner_prompt` writes the dimensional fork into the prompt itself:
 
@@ -197,5 +198,4 @@ Two pieces are shaped but not complete.
 
 **Cycle-boundary Sever.** `handle_face_work` always writes with `ThreadAction::Continue`. The `Sever` variant exists in `vfs.rs::ThreadAction` and is honored inside `write_ptr` (it parks the current thread and starts a new one), but no code path currently emits it from face completion. Braid severance requires an explicit call site that isn't there.
 
-Everything else — the classify-then-dispatch airlock, the polyglot stance resolution, the Gray-code adjacency computation, the path-precedence staleness, the PTR-only write chokepoint, the dimensional fork on `held_role`, the Validator's `VALIDATION INTERCEPT` echo of `[STATE]` and `[BWR]` — is enforced in the code you're running.
-
+Everything else — the card-landing router, the polyglot stance resolution, the Gray-code adjacency computation, the path-precedence staleness, the PTR-only write chokepoint, the dimensional fork on `held_role`, the Validator's `VALIDATION INTERCEPT` echo of `[STATE]` and `[BWR]` — is the geometry the workbench is worked in, live in the code you're running.

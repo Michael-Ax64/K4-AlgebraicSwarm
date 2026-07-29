@@ -2,7 +2,19 @@
 
 `src/` is the environment the Rust kernel yields into. It owns the LLM network calls, the browser storage, the DOM, and everything that has a lifecycle longer than a single turn — but it does not own the algebra. The algebra is Rust's. The host provides the space for it to breathe.
 
-This is a walk through the host as it actually exists, in the order the pieces engage at boot.
+## The workbench frame
+
+Before the component walk: the host is a workbench, not a pipeline. The operator sits in front of a data model with state, history, and relations at whatever depth the work needs, and a set of operations that act on it. That framing is load-bearing for reading the code.
+
+**Substrate.** `ledger/schema.ts` and `ledger/fs.ts` define the universal `CircuitNode` tree, its junction tables, and ten IndexedDB object stores. Everything with a lifecycle longer than a single turn lives here: worlds, projects, views, circuits, languages, documents, kinds, ledger rows, console rows, world-frame state, engine state. The substrate is the persisted reality the operator composes.
+
+**Live projection.** `ledger/grid-state.ts` projects the substrate into signals — `activeCircuit`, `activeCircuitLineage`, `activeWorldNode`, `circuitsGrid`, `languagesGrid`, `documentsGrid`, `vocabGrid`, `ledgerGrid`, `consoleGrid`, and their per-selection variants. When `selectedCircuitId` changes, one `createEffect` refreshes the whole slice atomically at the end of a microtask. The operator's view of reality is always coherent with what's in the store.
+
+**Operations.** Kinds define exchange shapes. Screens present the substrate. `bridge.ts::processSubmission` dispatches operations against it — engine Kinds land the manifest in Rust, template Kinds substitute and call the LLM directly, both record into the ledger and update per-circuit engine state.
+
+**The engine as one operation among many.** When an engine Kind fires, `bridge.ts::runEngineLoop` walks `JsCommand`s until the engine returns to the operator (Halt, Success, or AwaitUser). The engine is a card-routing kernel that reads `[STATE]` header shapes and lands cards into slots. The host doesn't validate what the operator can do to the substrate; it provides the surface, records what happens, and keeps the projection live.
+
+This is the walk through the host as it exists, in the order the pieces engage at boot.
 
 ## The reactive core — `reactive.ts`
 
@@ -80,7 +92,7 @@ Both paths flow through the same picker, the same manifest resolution, and the s
 
 Each Kind also carries a `requires` object — `{ view?, attachedDocs?, lockedCoordinate?, anchor? }` — that the picker consults against current state. Illegal kinds are greyed out with a hover-hint.
 
-`seed-kinds.ts` ships nine seed Kinds. The four engine-dispatched ones (`validator`, `bridge`, `controller`, `paradox`) reference the prompt spec files in their `engineMechanicsDoc` field so the operator can see what the engine will do. The five template-dispatched ones (`chat`, `typology`, `domain-classification`, `border-spec`, `exploration`) carry their prompts as strings — plain templates the operator can edit in the Kind's row.
+`seed-kinds.ts` ships eleven seed Kinds. The four engine-dispatched ones (`validator`, `bridge`, `controller`, `paradox`) reference the prompt spec files in their `engineMechanicsDoc` field so the operator can see what the engine will do. The seven template-dispatched ones (`chat`, `typology`, `domain-classification`, `border-spec`, `exploration`, `ontology-unfold`, `auto-map-domain`) carry their prompts as strings — plain templates the operator can edit in the Kind's row.
 
 The registry (`kinds-registry.ts`) exposes `systemKindsGrid`, `resolveKind(key)`, `resolveKindAlias(key)`, and `refreshKinds()` (which cold-start-seeds if IndexedDB is empty). The schema types Kinds as `scope: 'world' | 'project'` but the runtime treats every seed Kind as system-scoped; scope-inheritance is declared but not wired.
 
@@ -167,7 +179,7 @@ Deliberately linear:
    → load settings
    → seedDatabaseIfEmpty()  → cold-start with Default K4 Root + Default K4 Language + 16 seed vocab terms
    → refreshAllGrids()
-   → refreshKinds()  → cold-start with 9 seed kinds
+   → refreshKinds()  → cold-start with 11 seed kinds
    → recalculateTrashCounters()
 
 2. bootAirlock()
@@ -185,4 +197,3 @@ Deliberately linear:
 ```
 
 After this, the app is live. Every submission goes through `processSubmission` in `bridge.ts`. Every response either lands in the ledger and updates chat, or lands as an engine command that reroutes to another `FetchLLM` or into an `AwaitUser` pause.
-
