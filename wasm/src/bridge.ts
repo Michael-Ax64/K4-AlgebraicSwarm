@@ -1,26 +1,38 @@
 // wasm/src/bridge.ts
 
 import {
-  uiState, chatLog, engineHeader, workingSurface, braidHistory, activeThreadId,
-  currentRole, currentMode, braidThreads, selectedThreadId, sandboxes, manualPrompt, apiLog,
-  manifoldLog, lastQuery
+  uiState, chatLog, manualPrompt, manifoldLog, lastQuery
 } from './state';
+
+//engineHeader, workingSurface, braidHistory, activeThreadId,
+//currentRole, currentMode, braidThreads, selectedThreadId, sandboxes, apiLog,
 
 import {
   selectedCircuitId, activeCircuit, updateActiveCircuitDoc0, beginLedgerTurn,
-  appendConsoleRow, resolveCircuitLineage, systemSettings
+  appendConsoleRow, resolveCircuitLineage //, systemSettings
 } from './ledger/grid-state';
 
 import { vfsDb } from './ledger/fs';
 import { LedgerVFS } from './ledger/vfs-wrapper';
 import { callBuiltInAPI } from './llm-client';
 import init, { create_engine_with_state, dispatchable_kinds } from 'k4_manifold';
-import { updateStanceTensionsFromJSON } from './screens/arena-state';
+//import { updateStanceTensionsFromJSON } from './screens/arena-state';
 import { primeDispatchableKinds, resolveKind, resolveKindAlias } from './kinds/kinds-registry';
 import { createEffect } from './reactive';
 
 let engine: any;
 let currentLoadedEngineCircuitId: string | null = null;
+let activeAbortController: AbortController | null = null;
+
+
+export function abortInFlight(): void {
+  if (activeAbortController) {
+    activeAbortController.abort();
+    activeAbortController = null;
+  }
+  uiState.value = 'idle';
+  logManifold('info', 'bridge', 'In-flight LLM execution cancelled by operator.');
+}
 
 function logManifold(type: 'info' | 'warn' | 'error', source: 'system' | 'engine' | 'bridge' | 'parser', msg: string) {
   manifoldLog.value = [
@@ -133,21 +145,37 @@ export async function processSubmission(
     snapshot: manifest.snapshot,
   });
 
+
   if (kindDef?.dispatch === 'engine') {
     engine.set_domain_context(manifest.vocabulary.map(v => `${v.term} (${v.k4Type})`).join(', '));
     const command = engine.step_submission(manifest.doc0, JSON.stringify(manifest), kindKey, warm);
     await runEngineLoop(command, outRow?.id, kindKey);
   } else {
     const { apiConfig } = await resolveCircuitLineage(cId);
+    // Fall back to default provider if circuit has no World parent
+    const effectiveApiConfig: WorldSettings = apiConfig || {
+      apiProvider: 'default',
+      apiKey: '',
+      apiBaseUrl: '',
+      worldDirectives: ''
+    };
     
-    if (!apiConfig || apiConfig.apiProvider === 'manual') {
+    if (effectiveApiConfig.apiProvider === 'manual') {
       manualPrompt.value = compiledPrompt;
       uiState.value = 'awaiting_llm_paste';
       return;
     }
 
     try {
-      const responseText = await callBuiltInAPI(apiConfig as any, compiledPrompt, jsonMode);      
+      activeAbortController = new AbortController();
+      const responseText = await callBuiltInAPI(
+        effectiveApiConfig,
+        compiledPrompt,
+        jsonMode,
+        activeAbortController.signal
+      );      
+      activeAbortController = null;
+
       const { header, body } = extractHeader(responseText);
 
       await beginLedgerTurn({
@@ -169,11 +197,16 @@ export async function processSubmission(
 
       chatLog.value = [...chatLog.value, { role: 'system', text: responseText }];
       uiState.value = 'idle';
-    } catch (err) {
-      logManifold('error', 'bridge', `API Call Failed: ${err}`);
-      throw new Error(`API failed: ${err}`);
+      
+    } catch (err: any) {
+      activeAbortController = null;
+      uiState.value = 'idle';
+      const errMsg = err?.message || String(err);
+      logManifold('error', 'bridge', `API Call Failed: ${errMsg}`);
+      chatLog.value = [...chatLog.value, { role: 'error', text: `⚠️ API Call Failed: ${errMsg}` }];
     }
   }
+
 }
 
 export async function submitLlmPaste(llmResponseText: string): Promise<void> {

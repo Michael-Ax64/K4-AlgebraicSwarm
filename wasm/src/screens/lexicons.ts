@@ -6,12 +6,14 @@ import {
   activeCircuit, selectedCircuitId,
   languagesGrid, activeCircuitLangs, resolveCircuitLineage
 } from '../ledger/grid-state';
+
 import { vfsDb } from '../ledger/fs';
 import { pushScreen } from '../router';
 import { h } from '../dom';
 
+
 export function mountLexiconsScreen(container: HTMLElement): () => void {
-  const layout = h('div', { style: 'padding: 20px; height: 100%; display: flex; flex-direction: column; overflow-y: auto;' });
+  const layout = h('div', { className: 'k4-screen-layout scrollable' });
   container.appendChild(layout);
 
   createEffect(() => {
@@ -23,16 +25,16 @@ export function mountLexiconsScreen(container: HTMLElement): () => void {
 
     if (!cId || !circ) {
       layout.appendChild(h('div', {
-        style: 'margin: auto; color: var(--text-muted); font-style: italic; text-align: center;',
+        className: 'k4-empty-state',
         textContent: '🔒 Select an Active Circuit from the context graph to configure its language assignments.'
       }));
       return;
     }
 
     const header = h('div', {
-      style: 'display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid var(--border-strong); padding-bottom: 12px; margin-bottom: 15px;'
+      className: 'k4-section-header'
     },
-      h('h2', { style: 'margin: 0; color: var(--text-primary);', textContent: `📖 Language Assignments for ${circ.name}` })
+      h('h2', { className: 'k4-screen-title', textContent: `📖 Language Assignments for ${circ.name}` })
     );
 
     const listCard = h('div', {
@@ -63,7 +65,7 @@ export function mountLexiconsScreen(container: HTMLElement): () => void {
 
       if (allLangs.length === 0) {
         listCard.appendChild(h('div', {
-          style: 'color: var(--text-muted); font-style: italic; padding: 10px 0;',
+          className: 'k4-subtle', style: 'padding: 10px 0;',
           textContent: 'No sovereign languages created yet. Open Languages space to create one.'
         }));
         return;
@@ -81,7 +83,7 @@ export function mountLexiconsScreen(container: HTMLElement): () => void {
           h('div', {},
             h('strong', { textContent: `📖 ${l.name}`, style: `color: ${isEffective ? 'var(--role-bridge)' : 'var(--text-primary)'};` }),
             isInherited ? h('span', { style: 'font-size: 0.72rem; color: var(--role-paradox); margin-left: 8px; font-weight: bold;', textContent: `[✓ Inherited from ${ancestorName}]` }) : null,
-            l.description ? h('div', { style: 'font-size: 0.8rem; color: var(--text-muted); margin-top: 2px;', textContent: l.description }) : null
+            l.description ? h('div', { className: 'k4-caption', style: 'margin-top: 2px;', textContent: l.description }) : null
           ),
           h('input', {
             type: 'checkbox',
@@ -108,3 +110,4 @@ export function mountLexiconsScreen(container: HTMLElement): () => void {
 }
 
 screenRegistry.register({ id: 'lexicons', label: 'Languages', order: 105, mount: mountLexiconsScreen });
+

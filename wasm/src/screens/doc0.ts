@@ -8,7 +8,7 @@ import { pushScreen } from '../router';
 import { h } from '../dom';
 
 export function mountDoc0Screen(container: HTMLElement): () => void {
-  const layout = h('div', { style: 'padding: 20px; height: 100%; display: flex; flex-direction: column;' });
+  const layout = h('div', { className: 'k4-screen-layout' });
   container.appendChild(layout);
 
   let currentRenderedCircuitId: string | null = null;
@@ -22,7 +22,7 @@ export function mountDoc0Screen(container: HTMLElement): () => void {
     if (!cId || !circ) {
       currentRenderedCircuitId = null;
       layout.replaceChildren(h('div', { 
-        style: 'margin: auto; color: var(--text-muted); font-style: italic; text-align: center;',
+        className: 'k4-empty-state',
         textContent: '🔒 Select an Active Circuit from the context graph.'
       }));
       return;
@@ -63,7 +63,7 @@ export function mountDoc0Screen(container: HTMLElement): () => void {
       });
 
       const header = h('div', { style: 'display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid var(--border-strong); padding-bottom: 10px; margin-bottom: 15px;' },
-        h('h2', { style: 'margin: 0; color: var(--text-primary);', textContent: `doc0 Draft Composition: ${circ.name}` }),
+        h('h2', { className: 'k4-screen-title', textContent: `doc0 Draft Composition: ${circ.name}` }),
         wordCountEl
       );
 

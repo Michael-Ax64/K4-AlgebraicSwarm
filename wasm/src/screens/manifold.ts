@@ -6,7 +6,7 @@ import { screenRegistry } from './registry';
 import { h } from '../dom';
 
 export function mountManifoldScreen(container: HTMLElement): () => void {
-  const layout = h('div', { style: 'padding: 20px; height: 100%; display: flex; flex-direction: column;' });
+  const layout = h('div', { className: 'k4-screen-layout' });
   container.appendChild(layout);
 
   const logContainer = h('div', { 
@@ -21,8 +21,8 @@ export function mountManifoldScreen(container: HTMLElement): () => void {
   });
 
   // Top Header (Standalone, No Sub-Tabs)
-  const header = h('div', { style: 'display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid var(--border-strong); padding-bottom: 12px; margin-bottom: 15px;' },
-    h('h2', { style: 'margin: 0; color: var(--text-primary);', textContent: '⚡ Manifold Telemetry (Wasm Kernel Stream)' }),
+  const header = h('div', { className: 'k4-section-header' },
+    h('h2', { className: 'k4-screen-title', textContent: '⚡ Manifold Telemetry (Wasm Kernel Stream)' }),
     clearBtn
   );
 
@@ -41,7 +41,7 @@ export function mountManifoldScreen(container: HTMLElement): () => void {
 
     if (logs.length === 0) {
       logContainer.appendChild(h('div', {
-        style: 'color: var(--text-muted); font-style: italic; padding: 10px;',
+        className: 'k4-subtle', style: 'padding: 10px;',
         textContent: 'No manifold telemetry recorded.'
       }));
       return;

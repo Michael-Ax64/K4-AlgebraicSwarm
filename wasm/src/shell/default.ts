@@ -11,10 +11,11 @@ import {
   startRehoming, purgeCircuitPermanent, appendConsoleRow, refreshAllGrids,
   resolveCircuitLineage, sidebarCollapsed, recalculateTrashCounters
 } from '../ledger/grid-state';
+
 import { vfsDb } from '../ledger/fs';
 import { CircuitNode } from '../ledger/schema';
 import { createEffect } from '../reactive';
-import { h } from '../dom';
+import { h, trashButton } from '../dom';
 
 export const DefaultShell: AppShell = {
   mountChrome: (root: HTMLElement, registry: any) => {
@@ -192,11 +193,9 @@ export const DefaultShell: AppShell = {
                 style: 'background: transparent; border: none; color: var(--text-muted); cursor: pointer;',
                 on: { click: (e: Event) => { e.stopPropagation(); startRehoming(node.id); } }
               }),
-              h('button', {
-                textContent: '🗑️',
+              trashButton({
                 title: 'Move to Trash',
-                style: 'background: transparent; border: none; color: var(--text-muted); cursor: pointer;',
-                on: { click: (e: Event) => { e.stopPropagation(); deleteCircuitToTrash(node.id); } }
+                onClick: (e) => { e.stopPropagation(); deleteCircuitToTrash(node.id); }
               })
             )
           );
@@ -449,3 +448,4 @@ async function executeRehomeNodeDirect(nodeId: string, targetId: string | null) 
   await refreshAllGrids();
   await recalculateTrashCounters(); // Ensures sidebar trash badge updates immediately
 }
+

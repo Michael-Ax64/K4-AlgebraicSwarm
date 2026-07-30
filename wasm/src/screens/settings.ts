@@ -1,14 +1,18 @@
 // wasm/src/screens/settings.ts
 
-import { systemSettings, recalculateTrashCounters } from '../ledger/grid-state';
+import {
+  systemSettings, recalculateTrashCounters,
+  circuitTrashCount, languageTrashCount, documentTrashCount
+} from '../ledger/grid-state';
 import { vfsDb } from '../ledger/fs';
 import { screenRegistry } from './registry';
 import { runSeedImport } from '../ledger/seed';
 import { providers, catalogDefaultId } from '../config';
+import { createEffect } from '../reactive';
 import { h } from '../dom';
 
 export function mountSettingsScreen(container: HTMLElement): () => void {
-  const layout = h('div', { style: 'padding: 20px; max-width: 600px;' });
+  const layout = h('div', { className: 'k4-screen-layout narrow' });
   container.appendChild(layout);
 
   const curSettings = systemSettings.value;
@@ -42,7 +46,7 @@ export function mountSettingsScreen(container: HTMLElement): () => void {
   const autoSeedCheck = h('input', {
     type: 'checkbox',
     checked: curSettings.autoLoadSeedData,
-    style: 'cursor: pointer; transform: scale(1.1); margin-right: 8px;'
+    className: 'k4-checkbox-large', style: 'margin-right: 8px;'
   });
 
   const fileNamesInput = h('input', {
@@ -63,10 +67,21 @@ export function mountSettingsScreen(container: HTMLElement): () => void {
     }}
   });
 
+  // ── Trash Management ───────────────────────────────────────────────────
+  const trashCountsDisplay = h('div', {
+    style: 'font-size: 0.85rem; color: var(--text-secondary); font-family: var(--font-mono); margin-bottom: 10px;'
+  });
+
+  createEffect(() => {
+    const c = circuitTrashCount.value;
+    const d = documentTrashCount.value;
+    const l = languageTrashCount.value;
+    trashCountsDisplay.textContent = `Trash-counts: Circuits ${c}, Docs ${d}, Languages ${l}`;
+  });
+
   const recalcTrashBtn = h('button', {
     textContent: '↺ Recalculate Trash Counters',
-    className: 'k4-btn-primary',
-    style: 'margin-top: 10px; background: var(--bg-surface); border: 1px solid var(--border-strong); color: var(--text-secondary);',
+    className: 'k4-btn-secondary',
     on: { click: async () => {
       await recalculateTrashCounters();
       recalcTrashBtn.textContent = '✓ Counters Recalculated!';
@@ -74,6 +89,7 @@ export function mountSettingsScreen(container: HTMLElement): () => void {
     }}
   });
 
+  // ── General Actions ────────────────────────────────────────────────────
   const saveSettingsBtn = h('button', {
     textContent: 'Save Settings',
     className: 'k4-btn-primary',
@@ -93,7 +109,7 @@ export function mountSettingsScreen(container: HTMLElement): () => void {
 
   const resetBtn = h('button', {
     textContent: 'Factory Reset Database',
-    style: 'background: var(--health-halted); color: #fff; border: none; padding: 8px 16px; border-radius: 4px; font-weight: bold; cursor: pointer; margin-top: 10px;',
+    className: 'k4-btn-danger', style: 'padding: 8px 16px; border-radius: 4px; margin-top: 10px;',
     on: { click: async () => {
       if (confirm("Factory Reset: Destroy all Circuits, Documents, Languages, and Ledgers?")) {
         await vfsDb.factoryReset();
@@ -103,33 +119,40 @@ export function mountSettingsScreen(container: HTMLElement): () => void {
   });
 
   layout.append(
-    h('h2', { style: 'color: var(--text-primary); border-bottom: 1px solid var(--border-strong); padding-bottom: 8px; margin-bottom: 20px;', textContent: 'System Settings' }),
+    h('h2', { className: 'k4-screen-title underline', style: 'margin-bottom: 20px;', textContent: 'System Settings' }),
 
     // ── API Provider Panel ─────────────────────────────────────────────
-    h('div', { style: 'background: var(--bg-surface); padding: 15px; border-radius: 6px; border: 1px solid var(--border-strong); margin-bottom: 20px;' },
-      h('h3', { style: 'margin-top: 0; color: var(--text-primary); font-size: 0.95rem; margin-bottom: 10px;', textContent: '🔌 API Provider — Global Default' }),
-      h('label', { style: 'display: block; font-size: 0.8rem; color: var(--text-muted); font-weight: bold;', textContent: 'Default Provider (from src/config.json catalog)' }),
+    h('div', { className: 'k4-card' },
+      h('h3', { className: 'k4-section-title small', textContent: '🔌 API Provider — Global Default' }),
+      h('label', { className: 'k4-form-label-small', textContent: 'Default Provider (from src/config.json catalog)' }),
       providerSel,
       providerNote
     ),
 
     // ── Seed Data Panel ────────────────────────────────────────────────
-    h('div', { style: 'background: var(--bg-surface); padding: 15px; border-radius: 6px; border: 1px solid var(--border-strong); margin-bottom: 20px;' },
-      h('h3', { style: 'margin-top: 0; color: var(--text-primary); font-size: 0.95rem; margin-bottom: 10px;', textContent: '🌱 Seed Data Mechanics' }),
+    h('div', { className: 'k4-card' },
+      h('h3', { className: 'k4-section-title small', textContent: '🌱 Seed Data Mechanics' }),
       h('label', { style: 'display: flex; align-items: center; font-size: 0.85rem; color: var(--text-secondary); cursor: pointer;' },
         autoSeedCheck,
         ' Auto-load seed data on cold boot'
       ),
-      h('label', { style: 'display: block; margin-top: 12px; font-size: 0.8rem; color: var(--text-muted); font-weight: bold;', textContent: 'Seed Data Source File(s)' }),
+      h('label', { className: 'k4-form-label-small', style: 'margin-top: 12px;', textContent: 'Seed Data Source File(s)' }),
       fileNamesInput,
-      h('div', { style: 'display: flex; gap: 10px;' }, triggerSeedBtn, recalcTrashBtn)
+      triggerSeedBtn
+    ),
+
+    // ── Trash Management Panel ──────────────────────────────────────────
+    h('div', { className: 'k4-card' },
+      h('h3', { className: 'k4-section-title small', textContent: '🗑️ Trash Management' }),
+      trashCountsDisplay,
+      recalcTrashBtn
     ),
 
     saveSettingsBtn,
 
     // ── Danger Zone ────────────────────────────────────────────────────
-    h('div', { style: 'margin-top: 40px; padding: 15px; border: 1px dashed var(--health-halted); border-radius: 6px; background: rgba(239, 68, 68, 0.05);' },
-      h('h3', { style: 'color: var(--health-halted); margin-top: 0; font-size: 0.95rem;', textContent: 'Danger Zone' }),
+    h('div', { className: 'k4-panel-danger', style: 'margin-top: 40px;' },
+      h('h3', { className: 'k4-section-title small k4-heading-danger', style: 'margin-bottom: 0;', textContent: 'Danger Zone' }),
       h('p', { style: 'color: var(--text-secondary); font-size: 0.82rem; margin-bottom: 10px;', textContent: 'Permanently wipes IndexedDB and reloads the application.' }),
       resetBtn
     )
@@ -139,3 +162,4 @@ export function mountSettingsScreen(container: HTMLElement): () => void {
 }
 
 screenRegistry.register({ id: 'settings', label: 'Settings', order: 60, mount: mountSettingsScreen });
+

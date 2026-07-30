@@ -7,12 +7,14 @@ import {
   clearAllViewDocOverrides, selectedDocumentId, selectedCircuitId, activeCircuit,
   refreshAllGrids
 } from '../ledger/grid-state';
+
 import { ledgerVfs } from '../ledger/vfs-wrapper';
 import { pushScreen } from '../router';
-import { h } from '../dom';
+import { h, addRowButton } from '../dom';
+
 
 export function mountDocumentsScreen(container: HTMLElement): () => void {
-  const layout = h('div', { style: 'padding: 20px; height: 100%; display: flex; flex-direction: column; overflow-y: auto;' });
+  const layout = h('div', { className: 'k4-screen-layout scrollable' });
   container.appendChild(layout);
 
   createEffect(() => {
@@ -27,15 +29,12 @@ export function mountDocumentsScreen(container: HTMLElement): () => void {
 
     const deselectBtn = h('button', {
       textContent: '↺ Restore Defaults',
-      className: 'k4-btn-primary',
-      style: 'background: var(--bg-surface); border: 1px solid var(--border-strong); color: var(--text-secondary);',
+      className: 'k4-btn-secondary',
       on: { click: async () => await clearAllViewDocOverrides() }
     });
 
-    const addRowBtn = h('button', {
-      textContent: '+ Add Row',
-      className: 'k4-btn-primary',
-      on: { click: async () => {
+    const addRowBtn = addRowButton({
+      onClick: async () => {
         const freshDoc = await ledgerVfs.saveDocumentNode(
           'New Master Document',
           '',
@@ -43,13 +42,13 @@ export function mountDocumentsScreen(container: HTMLElement): () => void {
         );
         selectedDocumentId.value = freshDoc.id;
         await refreshAllGrids();
-      }}
+      }
     });
 
     const header = h('div', {
       style: 'display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid var(--border-strong); padding-bottom: 12px; margin-bottom: 20px;'
     },
-      h('h2', { style: 'margin: 0; color: var(--text-primary);', textContent: headlineText }),
+      h('h2', { className: 'k4-screen-title', textContent: headlineText }),
       h('div', { style: 'display: flex; gap: 10px;' }, deselectBtn, addRowBtn)
     );
 
@@ -64,7 +63,7 @@ export function mountDocumentsScreen(container: HTMLElement): () => void {
         textContent: `📄 ${sec.scopeName}`
       });
 
-      const table = h('table', { className: 'numbers-table', style: 'width: 100%; border-collapse: collapse;' },
+      const table = h('table', { className: 'numbers-table k4-table-full' },
         h('thead', {},
           h('tr', {},
             h('th', { textContent: 'Document Name', style: 'width: 45%;' }),
@@ -88,7 +87,7 @@ export function mountDocumentsScreen(container: HTMLElement): () => void {
           const cb = h('input', {
             type: 'checkbox',
             checked: isEffective,
-            style: 'cursor: pointer; transform: scale(1.2);',
+            className: 'k4-checkbox-large',
             on: { change: async (e: Event) => {
               const checked = (e.target as HTMLInputElement).checked;
               await setViewDocOverride(doc.id, col, checked);
@@ -106,7 +105,7 @@ export function mountDocumentsScreen(container: HTMLElement): () => void {
           }}
         },
           h('td', { style: 'font-weight: 600; color: var(--text-primary);' }, doc.name),
-          h('td', { style: 'font-size: 0.8rem; color: var(--text-muted);' }, doc.documentData?.kind || 'source'),
+          h('td', { className: 'k4-caption' }, doc.documentData?.kind || 'source'),
           makeCell('A'),
           makeCell('P'),
           makeCell('U'),

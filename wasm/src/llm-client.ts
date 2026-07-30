@@ -6,6 +6,7 @@ import {
   getProvider,
   getEffectiveDefaultProviderId,
 } from './config';
+
 import { systemSettings } from './ledger/grid-state';
 
 /**
@@ -16,6 +17,7 @@ import { systemSettings } from './ledger/grid-state';
  *   - otherwise → treat world.apiProvider as a catalog id
  *   - unknown catalog id → null (bridge.ts routes to manual paste)
  */
+
 export function resolveProviderForWorld(world: WorldSettings): ProviderCatalogEntry | null {
   if (world.apiProvider === 'manual') return null;
 
@@ -31,7 +33,8 @@ export function resolveProviderForWorld(world: WorldSettings): ProviderCatalogEn
 export async function callBuiltInAPI(
   world: WorldSettings,
   prompt: string,
-  jsonMode: boolean = false
+  jsonMode: boolean = false,
+  signal?: AbortSignal
 ): Promise<string> {
   const provider = resolveProviderForWorld(world);
   if (!provider) {
@@ -40,12 +43,12 @@ export async function callBuiltInAPI(
 
   switch (provider.transport) {
     case 'openai-chat':
-      return callOpenAIChat(provider, world, prompt, jsonMode);
+      return callOpenAIChat(provider, world, prompt, jsonMode, signal);
     case 'window-ai':
-      return callWindowAI(provider, prompt, jsonMode);
+      return callWindowAI(provider, prompt, jsonMode, signal);
     default: {
       const _exhaustive: never = provider.transport;
-      throw new Error(`Transport '${_exhaustive}' declared in catalog but not implemented in llm-client.ts.`);
+      throw new Error(`Transport '${_exhaustive}' declared in catalog but not implemented.`);
     }
   }
 }
@@ -56,11 +59,12 @@ async function callOpenAIChat(
   provider: ProviderCatalogEntry,
   world: WorldSettings,
   prompt: string,
-  jsonMode: boolean
+  jsonMode: boolean,
+  signal?: AbortSignal
 ): Promise<string> {
   const endpoint = world.apiBaseUrl || provider.endpoint;
   if (!endpoint) {
-    throw new Error(`Provider '${provider.id}' has no endpoint. Set apiBaseUrl on the world or fix the catalog entry.`);
+    throw new Error(`Provider '${provider.id}' has no endpoint.`);
   }
   if (provider.requiresApiKey && !world.apiKey) {
     throw new Error(`Provider '${provider.id}' requires an API key on the world.`);
@@ -87,6 +91,7 @@ async function callOpenAIChat(
     method: 'POST',
     headers,
     body: JSON.stringify(body),
+    signal,
   });
   if (!res.ok) throw new Error(`API Request Failed: ${res.status}`);
   const data = await res.json();
@@ -96,12 +101,15 @@ async function callOpenAIChat(
 async function callWindowAI(
   _provider: ProviderCatalogEntry,
   prompt: string,
-  jsonMode: boolean
+  jsonMode: boolean,
+  signal?: AbortSignal
 ): Promise<string> {
   const w = window as any;
   if (!('ai' in window) || !w.ai?.languageModel) {
-    throw new Error("Chrome On-Device AI not available.");
+    throw new Error("Chrome On-Device AI is not available in this browser. Enable chrome://flags/#optimization-guide-on-device-model.");
   }
+  if (signal?.aborted) throw new Error("Request cancelled by operator.");
+
   const session = await w.ai.languageModel.create({
     systemPrompt: jsonMode ? "Output valid JSON only." : "You are the K4 Manifold Semantic OS."
   });

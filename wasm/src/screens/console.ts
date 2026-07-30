@@ -15,7 +15,7 @@ export function mountConsoleScreen(container: HTMLElement): () => void {
 
   layout.append(
     h('div', { style: 'display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid var(--border-strong); padding-bottom: 10px; margin-bottom: 10px;' },
-      h('h2', { style: 'margin: 0; color: var(--text-primary);', textContent: 'Console Stream' })
+      h('h2', { className: 'k4-screen-title', textContent: 'Console Stream' })
     ),
     logContainer
   );
@@ -28,7 +28,7 @@ export function mountConsoleScreen(container: HTMLElement): () => void {
 
     if (logs.length === 0) {
       logContainer.appendChild(h('div', {
-        style: 'color: var(--text-muted); font-style: italic; padding: 10px;',
+        className: 'k4-subtle', style: 'padding: 10px;',
         textContent: circ ? `No console events recorded for ${circ.name} yet.` : 'No console events recorded.'
       }));
       return;
@@ -57,3 +57,4 @@ export function mountConsoleScreen(container: HTMLElement): () => void {
 }
 
 screenRegistry.register({ id: 'console', label: 'Console', order: 100, mount: mountConsoleScreen });
+

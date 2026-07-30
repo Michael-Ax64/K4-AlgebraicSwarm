@@ -7,7 +7,7 @@ import {
 } from '../ledger/grid-state';
 import { vfsDb } from '../ledger/fs';
 import { K4Type, ElementRole, Vocabulary } from '../ledger/schema';
-import { h, createAutosizingTextarea } from '../dom';
+import { h, createAutosizingTextarea, trashButton, addRowButton } from '../dom';
 
 export function mountLanguagesScreen(container: HTMLElement): () => void {
   const layout = h('div', { 
@@ -30,7 +30,7 @@ export function mountLanguagesScreen(container: HTMLElement): () => void {
     if (!lId) {
       currentRenderedLangId = null;
       layout.replaceChildren(h('div', { 
-        style: 'margin: auto; color: var(--text-muted); font-style: italic; text-align: center;',
+        className: 'k4-empty-state',
         textContent: 'Select or create a Language from the left sidebar tree.'
       }));
       return;
@@ -75,10 +75,10 @@ export function mountLanguagesScreen(container: HTMLElement): () => void {
       });
 
       const headerCard = h('div', {
-        style: 'background: var(--bg-surface); padding: 15px; border-radius: 6px; border: 1px solid var(--border-strong); margin-bottom: 20px;'
+        className: 'k4-card'
       },
-        h('label', { style: labelStyle, textContent: '📖 Lexicon Name' }), nameInput,
-        h('label', { style: labelStyle, textContent: 'Lexicon Description & Purpose' }), descInput,
+        h('label', { className: 'k4-form-label', textContent: '📖 Lexicon Name' }), nameInput,
+        h('label', { className: 'k4-form-label', textContent: 'Lexicon Description & Purpose' }), descInput,
         saveLangBtn
       );
 
@@ -174,15 +174,14 @@ export function mountLanguagesScreen(container: HTMLElement): () => void {
                 h('td', {}, h('span', { className: `badge pole-${v.k4Type.toLowerCase()}`, style: 'font-weight: bold; padding: 2px 6px; border-radius: 3px;', textContent: v.k4Type })),
                 h('td', {}, h('span', { className: `badge role-${v.role.toLowerCase()}`, style: 'font-size: 0.8rem; padding: 2px 6px; border-radius: 3px;', textContent: v.role })),
                 h('td', { style: 'font-size: 0.85rem; color: var(--text-secondary);' }, v.description || '—'),
-                h('td', {}, h('button', {
-                  textContent: '🗑️',
+                h('td', {}, trashButton({
                   title: 'Delete Term',
-                  style: 'background: transparent; border: none; color: var(--health-halted); cursor: pointer;',
-                  on: { click: async (e: Event) => {
+                  variant: 'danger',
+                  onClick: async (e) => {
                     e.stopPropagation();
                     await vfsDb.deleteVocabulary(v.id);
                     vocabGrid.value = await vfsDb.getVocabulary(lId);
-                  }}
+                  }
                 }))
               );
 
@@ -211,11 +210,9 @@ export function mountLanguagesScreen(container: HTMLElement): () => void {
         h('option', { value: 'NIL', textContent: 'NIL' })
       );
 
-      const addBtn = h('button', { 
-        textContent: '+ Add Row', 
-        className: 'k4-btn-primary',
+      const addBtn = addRowButton({
         style: 'padding: 6px 15px; font-weight: bold; height: 38px;',
-        on: { click: async () => {
+        onClick: async () => {
           const val = termInput.value.trim();
           if (!val) return;
 
@@ -235,13 +232,13 @@ export function mountLanguagesScreen(container: HTMLElement): () => void {
           vocabGrid.value = await vfsDb.getVocabulary(lId);
           termInput.value = '';
           descAreaInput.value = '';
-        }}
+        }
       });
 
       const addForm = h('div', { 
         style: 'background: var(--bg-surface); border: 1px solid var(--border-strong); padding: 15px; border-radius: 6px; margin-top: auto;' 
       },
-        h('h4', { style: 'margin-top: 0; color: var(--text-primary); margin-bottom: 10px;', textContent: '+ Add Row' }),
+        h('h4', { className: 'k4-section-title', textContent: '+ Add Row' }),
         h('div', { style: 'display: flex; gap: 10px; margin-bottom: 10px;' }, termInput, poleSel, roleSel),
         h('div', { style: 'display: flex; gap: 10px; align-items: center;' }, descAreaInput, addBtn)
       );
@@ -253,6 +250,5 @@ export function mountLanguagesScreen(container: HTMLElement): () => void {
   return () => { container.innerHTML = ''; };
 }
 
-const labelStyle = 'font-weight: bold; color: var(--text-secondary); display: block; margin-bottom: 4px; font-size: 0.85rem;';
 
 screenRegistry.register({ id: 'languages', label: 'Lexicon', order: 11, mount: mountLanguagesScreen });

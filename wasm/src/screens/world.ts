@@ -4,7 +4,7 @@ import { screenRegistry } from './registry';
 import { createEffect, Signal } from '../reactive';
 import {
   activeCircuit, circuitsGrid, selectedCircuitId,
-  globalLanguagesGrid, globalDocumentsGrid
+  languagesGrid, documentsGrid
 } from '../ledger/grid-state';
 
 import { vfsDb } from '../ledger/fs';
@@ -12,59 +12,34 @@ import { providers } from '../config';
 import { pushScreen } from '../router';
 import { CircuitNode, WorldSettings, LedgerRow } from '../ledger/schema';
 import { h } from '../dom';
+import { mountChildrenList, createAddChildButton, mountSpecializationEditor } from '../circuit-detail';
 
 type WorldSubTab = 'settings' | 'children' | 'languages' | 'documents' | 'history';
 
 export function mountWorldScreen(container: HTMLElement): () => void {
   const activeSubTab = new Signal<WorldSubTab>('settings');
-  const saveStatus = new Signal<string | null>(null);
 
-  const layout = h('div', { style: 'display: flex; flex-direction: column; height: 100%; padding: 20px;' });
+  const layout = h('div', { className: 'k4-screen-layout' });
   container.appendChild(layout);
 
   createEffect(() => {
-    const c = activeCircuit.value;
+    // Circuit invariant: activeCircuit is always non-null in a mounted screen.
+    const c = activeCircuit.value!;
     const tab = activeSubTab.value;
-    const status = saveStatus.value;
     const allCircuits = circuitsGrid.value;
 
-    layout.replaceChildren();
-
-    if (!c) {
-      layout.appendChild(h('div', {
-        style: 'margin: auto; color: var(--text-muted); font-style: italic; text-align: center;',
-        textContent: '🔒 Select a Circuit from the context graph.'
-      }));
-      return;
-    }
-
-    // Header
-    const header = h('div', { style: 'display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px;' },
-      h('h2', { style: 'margin: 0; color: var(--text-primary);', textContent: `🌍 World Class: ${c.name}` }),
-      status ? h('span', { style: 'color: var(--health-clear); font-weight: bold; font-size: 0.85rem;', textContent: status }) : h('span')
-    );
-
-    // Sub-Nav Bar
-    const nav = h('div', { style: 'display: flex; gap: 8px; border-bottom: 1px solid var(--border-strong); padding-bottom: 10px; margin-bottom: 20px; flex-wrap: wrap;' });
-    const tabs: { id: WorldSubTab; label: string }[] = [
-      { id: 'settings', label: 'API Configuration & Directives' },
-      { id: 'children', label: 'Child Circuits & Projects' },
-      { id: 'languages', label: 'Linked Lexicons' },
-      { id: 'documents', label: 'Master Documents' },
-      { id: 'history', label: 'World Audit Log' }
-    ];
-
-    tabs.forEach(t => {
-      const btn = h('button', {
-        textContent: t.label,
-        style: `padding: 6px 12px; border-radius: 4px; border: 1px solid ${tab === t.id ? 'var(--role-bridge)' : 'transparent'}; background: ${tab === t.id ? 'var(--bg-surface)' : 'transparent'}; color: ${tab === t.id ? 'var(--text-primary)' : 'var(--text-secondary)'}; font-weight: bold; cursor: pointer; transition: all 0.2s;`,
-        on: { click: () => activeSubTab.value = t.id }
-      });
-      nav.appendChild(btn);
-    });
-
-    const contentWrapper = h('div', { style: 'flex: 1; overflow-y: auto; display: flex; flex-direction: column;' });
-    layout.append(header, nav, contentWrapper);
+    mountSpecializationEditor(layout, {
+      title: `🌍 World Class: ${c.name}`,
+      activeTab: tab,
+      tabs: [
+        { id: 'settings',  label: 'API Configuration & Directives' },
+        { id: 'children',  label: 'Child Circuits & Projects' },
+        { id: 'languages', label: 'Linked Lexicons' },
+        { id: 'documents', label: 'Master Documents' },
+        { id: 'history',   label: 'World Audit Log' }
+      ],
+      onTabChange: (id) => activeSubTab.value = id as WorldSubTab,
+      renderTab: (tab, contentWrapper) => {
 
     const worldData: WorldSettings = c.specializationData || {
       apiProvider: 'manual',
@@ -77,6 +52,17 @@ export function mountWorldScreen(container: HTMLElement): () => void {
     if (tab === 'settings') {
       const catalog     = providers.value;
       const currentPick = worldData.apiProvider || 'default';
+
+      const persistWorldData = async () => {
+        c.specializationData = {
+          apiProvider: providerSel.value as any,
+          apiKey: keyInput.value,
+          apiBaseUrl: urlInput.value,
+          worldDirectives: dirInput.value,
+        };
+        c.updatedAt = Date.now();
+        await vfsDb.upsertCircuit(c);
+      };
 
       const providerSel = h('select', { style: 'width: 100%; max-width: 500px; margin-bottom: 15px;' },
         h('option', {
@@ -94,99 +80,35 @@ export function mountWorldScreen(container: HTMLElement): () => void {
           textContent: `${p.name}  [${p.transport}]`,
           selected: currentPick === p.id
         }))
-      );      
+      ) as HTMLSelectElement;
+      providerSel.addEventListener('change', persistWorldData);
 
-      const keyInput = h('input', { type: 'password', value: worldData.apiKey || '', placeholder: 'API Key (if required)...', style: 'width: 100%; max-width: 500px; margin-bottom: 15px;' });
-      const urlInput = h('input', { type: 'text', value: worldData.apiBaseUrl || '', placeholder: 'Base URL (e.g. https://api.openai.com/v1)...', style: 'width: 100%; max-width: 500px; margin-bottom: 15px;' });
-      const dirInput = h('textarea', { value: worldData.worldDirectives || '', placeholder: 'Macro-directives for this World...', style: 'width: 100%; max-width: 500px; height: 100px; margin-bottom: 20px; resize: vertical;' });
+      const keyInput = h('input', { type: 'password', value: worldData.apiKey || '', placeholder: 'API Key (if required)...', style: 'width: 100%; max-width: 500px; margin-bottom: 15px;' }) as HTMLInputElement;
+      keyInput.addEventListener('change', persistWorldData);
 
-      const saveBtn = h('button', {
-        textContent: 'Save World Settings',
-        className: 'k4-btn-primary',
-        style: 'align-self: flex-start;',
-        on: { click: async () => {
-          c.specialization = 'world';
-          c.specializationData = {
-            apiProvider: providerSel.value as any,
-            apiKey: keyInput.value,
-            apiBaseUrl: urlInput.value,
-            worldDirectives: dirInput.value
-          };
-          c.updatedAt = Date.now();
-          await vfsDb.upsertCircuit(c);
-          saveStatus.value = '✓ World Configuration Saved!';
-          setTimeout(() => saveStatus.value = null, 2000);
-        }}
-      });
+      const urlInput = h('input', { type: 'text', value: worldData.apiBaseUrl || '', placeholder: 'Base URL (e.g. https://api.openai.com/v1)...', style: 'width: 100%; max-width: 500px; margin-bottom: 15px;' }) as HTMLInputElement;
+      urlInput.addEventListener('change', persistWorldData);
+
+      const dirInput = h('textarea', { value: worldData.worldDirectives || '', placeholder: 'Macro-directives for this World...', style: 'width: 100%; max-width: 500px; height: 100px; margin-bottom: 20px; resize: vertical;' }) as HTMLTextAreaElement;
+      dirInput.addEventListener('change', persistWorldData);
 
       contentWrapper.append(
-        h('label', { style: labelStyle, textContent: 'API Provider' }), providerSel,
-        h('label', { style: labelStyle, textContent: 'API Key' }), keyInput,
-        h('label', { style: labelStyle, textContent: 'Base URL' }), urlInput,
-        h('label', { style: labelStyle, textContent: 'Macro World Directives' }), dirInput,
-        saveBtn
+        h('label', { className: 'k4-form-label', textContent: 'API Provider' }), providerSel,
+        h('label', { className: 'k4-form-label', textContent: 'API Key' }), keyInput,
+        h('label', { className: 'k4-form-label', textContent: 'Base URL' }), urlInput,
+        h('label', { className: 'k4-form-label', textContent: 'Macro World Directives' }), dirInput,
       );
     }
 
     // ─── TAB 2: CHILD CIRCUITS & PROJECTS ──────────────────────────────────
     else if (tab === 'children') {
-      const childNodes = allCircuits.filter(other => other.priorId === c.id && other.priorId !== '__TRASH__');
+      const childList = mountChildrenList(c.id, allCircuits, {
+        showDescription: true,
+        emptyMessage: 'No child circuits or projects point to this World as prior.',
+      });
 
-      const childList = h('div', { style: 'display: flex; flex-direction: column; gap: 10px; margin-bottom: 20px;' });
-
-      if (childNodes.length === 0) {
-        childList.appendChild(h('div', {
-          style: 'color: var(--text-muted); font-style: italic;',
-          textContent: 'No child circuits or projects point to this World as prior.'
-        }));
-      } else {
-        childNodes.forEach(child => {
-          const badge = child.specialization === 'project' ? '📁' : child.specialization === 'view' ? '👁️' : '⌖';
-          const card = h('div', {
-            style: 'background: var(--bg-surface); border: 1px solid var(--border-strong); border-radius: 6px; padding: 12px; display: flex; justify-content: space-between; align-items: center;'
-          },
-            h('div', {},
-              h('strong', { style: 'color: var(--text-primary); font-size: 0.95rem;', textContent: `${badge} ${child.name}` }),
-              h('div', { style: 'font-size: 0.8rem; color: var(--text-muted); margin-top: 2px;', textContent: child.description || '(No description)' })
-            ),
-            h('button', {
-              textContent: 'Select Circuit',
-              className: 'k4-btn-primary',
-              style: 'padding: 4px 10px; font-size: 0.8rem;',
-              on: { click: () => {
-                selectedCircuitId.value = child.id;
-                pushScreen('chat');
-              }}
-            })
-          );
-          childList.appendChild(card);
-        });
-      }
-
-      // Quick Create Child Button
-      const addChildBtn = h('button', {
-        textContent: '+ Add Child Circuit under this World',
-        className: 'k4-btn-primary',
-        style: 'align-self: flex-start;',
-        on: { click: async () => {
-          const now = Date.now();
-          const fresh: CircuitNode = {
-            id: `circ-${now}-${Math.random().toString(36).substring(2, 7)}`,
-            priorId: c.id,
-            specialization: 'circuit',
-            name: 'New Child Circuit',
-            description: '',
-            doc0: '',
-            physics: { omega: 1.0, r: 10, l: 10, c: 0.1 },
-            activeFace: 'P',
-            heldAbsentVar: 'I',
-            createdAt: now,
-            updatedAt: now,
-          };
-          await vfsDb.upsertCircuit(fresh);
-          circuitsGrid.value = await vfsDb.getAllCircuits();
-          selectedCircuitId.value = fresh.id;
-        }}
+      const addChildBtn = createAddChildButton(c.id, {
+        label: '+ Add Child Circuit under this World',
       });
 
       contentWrapper.append(
@@ -209,7 +131,7 @@ export function mountWorldScreen(container: HTMLElement): () => void {
 
         if (langs.length === 0) {
           listCard.appendChild(h('div', {
-            style: 'color: var(--text-muted); font-style: italic;',
+            className: 'k4-subtle',
             textContent: 'No global languages defined. Create one on the top Global Languages screen.'
           }));
           return;
@@ -222,12 +144,12 @@ export function mountWorldScreen(container: HTMLElement): () => void {
           },
             h('div', {},
               h('strong', { textContent: `📖 ${l.name}`, style: `color: ${isLinked ? 'var(--role-bridge)' : 'var(--text-primary)'};` }),
-              l.description ? h('div', { style: 'font-size: 0.8rem; color: var(--text-muted); margin-top: 2px;', textContent: l.description }) : null
+              l.description ? h('div', { className: 'k4-caption', style: 'margin-top: 2px;', textContent: l.description }) : null
             ),
             h('input', {
               type: 'checkbox',
               checked: isLinked,
-              style: 'cursor: pointer; transform: scale(1.2);',
+              className: 'k4-checkbox-large',
               on: { change: async (e: Event) => {
                 const checked = (e.target as HTMLInputElement).checked;
                 await vfsDb.upsertCircuitLangSelection({
@@ -244,7 +166,7 @@ export function mountWorldScreen(container: HTMLElement): () => void {
       })();
 
       contentWrapper.append(
-        h('h3', { style: 'margin-top: 0; color: var(--text-primary); margin-bottom: 10px;', textContent: 'Active Lexicons for this World Node' }),
+        h('h3', { className: 'k4-section-title', textContent: 'Active Lexicons for this World Node' }),
         listCard
       );
     }
@@ -252,7 +174,7 @@ export function mountWorldScreen(container: HTMLElement): () => void {
     // ─── TAB 4: MASTER DOCUMENTS ───────────────────────────────────────────
     else if (tab === 'documents') {
       const docs = globalDocumentsGrid.value;
-      const table = h('table', { className: 'numbers-table', style: 'width: 100%; border-collapse: collapse;' },
+      const table = h('table', { className: 'numbers-table k4-table-full' },
         h('thead', {},
           h('tr', {},
             h('th', { textContent: 'Document Name', style: 'width: 50%;' }),
@@ -264,13 +186,13 @@ export function mountWorldScreen(container: HTMLElement): () => void {
 
       const tbody = h('tbody');
       if (docs.length === 0) {
-        tbody.appendChild(h('tr', {}, h('td', { colSpan: 3, style: 'text-align: center; color: var(--text-muted); font-style: italic; padding: 20px;', textContent: 'No documents in global corpus.' })));
+        tbody.appendChild(h('tr', {}, h('td', { colSpan: 3, className: 'k4-empty-state', style: 'padding: 20px;', textContent: 'No documents in global corpus.' })));
       } else {
         docs.forEach(d => {
           const flags = [d.defaultA ? 'A' : '', d.defaultP ? 'P' : '', d.defaultU ? 'U' : '', d.defaultI ? 'I' : '', d.defaultR ? 'R' : ''].filter(Boolean).join(', ') || 'None';
           tbody.appendChild(h('tr', {},
             h('td', { style: 'font-weight: 600; color: var(--text-primary);' }, d.name),
-            h('td', { style: 'font-size: 0.8rem; color: var(--text-muted);' }, d.kind),
+            h('td', { className: 'k4-caption' }, d.kind),
             h('td', { style: 'font-family: var(--font-mono); font-size: 0.85rem; color: var(--role-bridge);' }, flags)
           ));
         });
@@ -278,14 +200,14 @@ export function mountWorldScreen(container: HTMLElement): () => void {
 
       table.appendChild(tbody);
       contentWrapper.append(
-        h('h3', { style: 'margin-top: 0; color: var(--text-primary); margin-bottom: 10px;', textContent: 'Global Corpus Documents' }),
+        h('h3', { className: 'k4-section-title', textContent: 'Global Corpus Documents' }),
         table
       );
     }
 
     // ─── TAB 5: WORLD AUDIT LOG ─────────────────────────────────────────────
     else if (tab === 'history') {
-      const historyTable = h('table', { className: 'numbers-table', style: 'width: 100%; border-collapse: collapse;' },
+      const historyTable = h('table', { className: 'numbers-table k4-table-full' },
         h('thead', {},
           h('tr', {},
             h('th', { textContent: 'Turn.Seq' }),
@@ -303,14 +225,14 @@ export function mountWorldScreen(container: HTMLElement): () => void {
         tbody.replaceChildren();
 
         if (rows.length === 0) {
-          tbody.appendChild(h('tr', {}, h('td', { colSpan: 4, style: 'text-align: center; color: var(--text-muted); font-style: italic; padding: 20px;', textContent: 'No execution turns logged for this World node.' })));
+          tbody.appendChild(h('tr', {}, h('td', { colSpan: 4, className: 'k4-empty-state', style: 'padding: 20px;', textContent: 'No execution turns logged for this World node.' })));
         } else {
           rows.forEach(r => {
             tbody.appendChild(h('tr', {},
               h('td', { style: 'font-weight: bold;' }, `#${r.turnNumber}.${r.seq}`),
               h('td', { style: 'font-weight: bold; color: var(--role-bridge);' }, r.kind),
               h('td', { style: 'font-family: var(--font-mono); font-size: 0.8rem;' }, r.ptrStance ? `[PTR] ${r.ptrStance}` : (r.header || '—')),
-              h('td', { style: 'font-size: 0.8rem; color: var(--text-muted);' }, new Date(r.createdAt).toLocaleTimeString())
+              h('td', { className: 'k4-caption' }, new Date(r.createdAt).toLocaleTimeString())
             ));
           });
         }
@@ -318,15 +240,17 @@ export function mountWorldScreen(container: HTMLElement): () => void {
 
       historyTable.appendChild(tbody);
       contentWrapper.append(
-        h('h3', { style: 'margin-top: 0; color: var(--text-primary); margin-bottom: 10px;', textContent: 'World Node Execution Audit Log' }),
+        h('h3', { className: 'k4-section-title', textContent: 'World Node Execution Audit Log' }),
         historyTable
       );
     }
+      }
+    });
   });
 
   return () => { container.innerHTML = ''; };
 }
 
-const labelStyle = 'font-weight: bold; color: var(--text-secondary); display: block; margin-bottom: 4px; font-size: 0.85rem;';
 
 screenRegistry.register({ id: 'world', label: 'World Settings', order: 12, mount: mountWorldScreen });
+

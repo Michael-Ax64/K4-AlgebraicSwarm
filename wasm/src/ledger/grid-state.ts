@@ -60,28 +60,38 @@ export const systemSettings = new Signal<SystemSettings>({
   telemetryMaxEntries: 0
 });
 
-// Backwards-compatibility Aliases
-export const activeProject = activeCircuit;
-export const activeView = activeCircuit;
-export const activeWorldConfig = activeCircuit;
+// // EXPIRED Backwards-compatibility Aliases  USER WILL DELETE MANUALLY.
+// export const activeProject = activeCircuit;
+// export const activeView = activeCircuit;
+// export const activeWorldConfig = activeCircuit;
 
-export const selectedWorldId = selectedCircuitId;
-export const selectedProjectId = selectedCircuitId;
-export const selectedViewId = selectedCircuitId;
+// export const selectedWorldId = selectedCircuitId;
+// export const selectedProjectId = selectedCircuitId;
+// export const selectedViewId = selectedCircuitId;
 
-export const worldsGrid = circuitsGrid;
-export const projectsGrid = circuitsGrid;
-export const viewsGrid = circuitsGrid;
-export const projectCircuitsGrid = circuitsGrid;
-export const circuitGrid = circuitsGrid;
+// export const worldsGrid = circuitsGrid;
+// export const projectsGrid = circuitsGrid;
+// export const viewsGrid = circuitsGrid;
+// export const projectCircuitsGrid = circuitsGrid;
+// export const circuitGrid = circuitsGrid;
 
-export const worldLanguagesGrid = languagesGrid;
-export const globalLanguagesGrid = languagesGrid;
-export const worldDocumentsGrid = documentsGrid;
-export const globalDocumentsGrid = documentsGrid;
+// export const worldLanguagesGrid = languagesGrid;
+// export const globalLanguagesGrid = languagesGrid;
+// export const worldDocumentsGrid = documentsGrid;
+// export const globalDocumentsGrid = documentsGrid;
 
-export const viewLangSelectionsGrid = activeCircuitLangs;
-export const viewDocOverridesGrid = activeCircuitDocOverrides;
+// export const viewLangSelectionsGrid = activeCircuitLangs;
+// export const viewDocOverridesGrid = activeCircuitDocOverrides;
+
+
+
+// THIS FILE CONTAINS FUTURE WORK, NOT YET USED HERE.
+// keep namings current and keep the functions.
+// e.g.: markLedgerAnswerKept(circuitId, rowId)
+//       editLedgerRow(id, patch)
+// also -- keep comments up to date, do not remove them!
+
+
 
 // ─── BOOT LEDGER FROM DATABASE ─────────────────────────────────────────────
 export async function bootLedger(): Promise<void> {
@@ -300,8 +310,30 @@ export async function purgeCircuitPermanent(circuitId: string) {
 
   await vfsDb.purgeCircuit(circuitId);
   await refreshAllGrids();
-  
-  if (selectedCircuitId.peek() === circuitId) selectedCircuitId.value = null;
+
+  // Auto-repick to preserve the "always at least one Circuit selected" invariant.
+  // The rule (per operator spec): try another trash item first (operator stays in
+  // trash view); else the first root (priorId === null); else instantiate the
+  // default root and pick that. Language and Document selections just null out —
+  // they have their own selection signals and don't share this invariant.
+  if (selectedCircuitId.peek() === circuitId) {
+    const grid = circuitsGrid.peek();
+    const nextTrash = grid.find(c => c.priorId === '__TRASH__' && c.id !== circuitId);
+    if (nextTrash) {
+      selectedCircuitId.value = nextTrash.id;
+    } else {
+      const firstRoot = grid.find(c => c.priorId === null && c.id !== circuitId);
+      if (firstRoot) {
+        selectedCircuitId.value = firstRoot.id;
+      } else {
+        // Nothing left — re-seed and pick the reconstituted default.
+        await seedDatabaseIfEmpty();
+        await refreshAllGrids();
+        const seeded = circuitsGrid.peek().find(c => c.priorId === null);
+        selectedCircuitId.value = seeded?.id ?? null;
+      }
+    }
+  }
   if (selectedLanguageId.peek() === circuitId) selectedLanguageId.value = null;
   if (selectedDocumentId.peek() === circuitId) selectedDocumentId.value = null;
 }
@@ -386,7 +418,6 @@ export async function updateActiveCircuitDoc0(newDoc0: string): Promise<void> {
   await refreshAllGrids();
 }
 
-export const updateActiveViewDoc0 = updateActiveCircuitDoc0;
 
 export async function markLedgerAnswerKept(circuitId: string, rowId: string): Promise<void> {
   const rows = await vfsDb.getLedgerRows(circuitId);

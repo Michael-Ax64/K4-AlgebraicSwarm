@@ -1,5 +1,5 @@
 // wasm/src/screens/kinds.ts
-
+//
 // Global screen exposing the AppKind registry. Composes Project → World
 // sections (matches composedKinds ordering — nearest scope first). Rows are
 // grouped by `family` inside each section. Template-dispatched Kinds edit
@@ -22,7 +22,7 @@ import { h, createAutosizingTextarea } from '../dom';
 export function mountKindsScreen(container: HTMLElement): () => void {
   const expandedKindId = new Signal<string | null>(null);
 
-  const layout = h('div', { style: 'padding: 20px; height: 100%; display: flex; flex-direction: column; overflow-y: auto;' });
+  const layout = h('div', { className: 'k4-screen-layout scrollable' });
   container.appendChild(layout);
 
   createEffect(() => {
@@ -33,9 +33,9 @@ export function mountKindsScreen(container: HTMLElement): () => void {
 
     // Top-Level Screen Header (Standalone, No Sub-Tabs)
     layout.appendChild(h('div', {
-      style: 'display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid var(--border-strong); padding-bottom: 12px; margin-bottom: 15px;'
+      className: 'k4-section-header'
     },
-      h('h2', { style: 'margin: 0; color: var(--text-primary);', textContent: '🧩 System Flows (Kinds Registry)' }),
+      h('h2', { className: 'k4-screen-title', textContent: '🧩 System Flows (Kinds Registry)' }),
       h('span', { style: 'font-size: 0.8rem; color: var(--text-muted); font-family: var(--font-mono);', textContent: `Total Flows: ${kinds.length}` })
     ));
 
@@ -47,7 +47,7 @@ export function mountKindsScreen(container: HTMLElement): () => void {
     ));
 
     if (kinds.length === 0) {
-      layout.appendChild(h('div', { style: 'color: var(--text-muted); font-style: italic;', textContent: 'No System Kinds registered.' }));
+      layout.appendChild(h('div', { className: 'k4-subtle', textContent: 'No System Kinds registered.' }));
       return;
     }
 
@@ -81,7 +81,7 @@ function renderKindCard(k: AppKind, isExpanded: boolean, toggle: () => void): HT
       h('strong', { style: 'color: var(--text-primary); font-size: 1rem;', textContent: k.alias }),
       h('code', { style: 'font-size: 0.78rem; color: var(--role-bridge); font-family: var(--font-mono); background: var(--bg-deep); padding: 2px 6px; border-radius: 3px;', textContent: k.key }),
       h('span', {
-        style: `font-size: 0.68rem; padding: 2px 6px; border-radius: 3px; font-weight: bold; letter-spacing: 0.5px; ${isEngine ? 'background: var(--role-paradox); color: #fff;' : 'background: var(--role-controller); color: #fff;'}/`,
+        style: `font-size: 0.68rem; padding: 2px 6px; border-radius: 3px; font-weight: bold; letter-spacing: 0.5px; ${isEngine ? 'background: var(--role-paradox); color: #fff;' : 'background: var(--role-controller); color: #fff;'}`,
         textContent: isEngine ? 'ENGINE DISPATCH' : 'TEMPLATE DISPATCH'
       }),
       h('span', {
@@ -141,9 +141,9 @@ function renderKindCard(k: AppKind, isExpanded: boolean, toggle: () => void): HT
       });
 
       details.append(
-        h('label', { style: labelStyle, textContent: 'Alias (Display Name)' }), aliasInput,
-        h('label', { style: labelStyle, textContent: 'Hint (Operator Note)' }), hintInput,
-        h('label', { style: labelStyle, textContent: 'Prompt Template' }), tmplArea,
+        h('label', { className: 'k4-form-label', textContent: 'Alias (Display Name)' }), aliasInput,
+        h('label', { className: 'k4-form-label', textContent: 'Hint (Operator Note)' }), hintInput,
+        h('label', { className: 'k4-form-label', textContent: 'Prompt Template' }), tmplArea,
         saveBtn
       );
     }
@@ -154,7 +154,6 @@ function renderKindCard(k: AppKind, isExpanded: boolean, toggle: () => void): HT
   return card;
 }
 
-const labelStyle = 'font-weight: bold; color: var(--text-secondary); display: block; margin-bottom: 4px; font-size: 0.8rem;';
 
 screenRegistry.register({ id: 'kinds', label: 'Kinds', order: 20, mount: mountKindsScreen });
 

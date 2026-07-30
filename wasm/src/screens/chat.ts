@@ -3,73 +3,31 @@
 import { createEffect, Signal } from '../reactive';
 import { screenRegistry } from './registry';
 import { uiState, manualPrompt } from '../state';
-import { processSubmission, submitLlmPaste, processUserReply, resetEngineRun } from '../bridge';
-import {
-  selectedCircuitId, activeCircuit, ledgerGrid, updateActiveCircuitDoc0,
-  markLedgerAnswerKept, editLedgerRow, resolvedInclusionForActiveView,
-  activeCircuitLangs
-} from '../ledger/grid-state';
-import { systemKindsGrid, resolveKind, resolveKindAlias } from '../kinds/kinds-registry';
-import { LedgerRow } from '../ledger/schema';
-import { pushScreen } from '../router';
+import { processSubmission, submitLlmPaste, processUserReply, abortInFlight } from '../bridge';
+import { selectedCircuitId, activeCircuit,
+         ledgerGrid, updateActiveCircuitDoc0 } from '../ledger/grid-state';
+import { systemKindsGrid, resolveKindAlias } from '../kinds/kinds-registry';
 import { h } from '../dom';
+
 
 export function mountChatScreen(container: HTMLElement): () => void {
   const selectedKindKey = new Signal<string>('chat');
   const isWarm = new Signal<boolean>(false);
-  const editingRowId = new Signal<string | null>(null);
 
   const layout = h('div', { style: 'display: flex; flex-direction: column; height: 100%; padding: 15px;' });
   container.appendChild(layout);
 
-  let currentRenderedCircuitId: string | null = null;
+  // Circuit invariant: seedDatabaseIfEmpty runs at boot, purgeCircuitPermanent
+  // auto-repicks, so activeCircuit is always non-null in a mounted screen.
+  const cId = selectedCircuitId.peek()!;
+  const circ = activeCircuit.peek()!;
 
-  // 1. Transcript Container
+  // 1. Transcript Log
   const logContainer = h('div', { 
     style: 'flex: 1; overflow-y: auto; background: var(--bg-surface); border: 1px solid var(--border-strong); border-radius: 4px; padding: 15px; margin-bottom: 10px;'
   });
 
-  // 2. Manual Mode Workspace (Copy Prompt & Paste Response)
-  const manualPromptArea = h('textarea', {
-    readOnly: true,
-    style: 'width: 100%; height: 120px; font-family: var(--font-mono); font-size: 0.85rem; background: var(--bg-deep); color: var(--text-primary); border: 1px solid var(--border-strong); border-radius: 4px; padding: 10px; margin-bottom: 8px;'
-  });
-
-  const copyPromptBtn = h('button', {
-    textContent: '📋 Copy Prompt to Clipboard',
-    className: 'k4-btn-primary',
-    style: 'margin-bottom: 12px;',
-    on: { click: () => {
-      navigator.clipboard.writeText(manualPromptArea.value);
-      copyPromptBtn.textContent = 'Copied!';
-      setTimeout(() => copyPromptBtn.textContent = '📋 Copy Prompt to Clipboard', 2000);
-    }}
-  });
-
-  const pasteArea = h('textarea', {
-    placeholder: 'Paste the external LLM response JSON/markdown here...',
-    style: 'width: 100%; height: 100px; font-family: var(--font-mono); font-size: 0.85rem; background: var(--bg-deep); color: var(--text-primary); border: 1px solid var(--border-strong); border-radius: 4px; padding: 10px; margin-bottom: 8px;'
-  });
-
-  const submitPasteBtn = h('button', {
-    textContent: '🚀 Submit Pasted LLM Response',
-    className: 'k4-btn-primary',
-    on: { click: async () => {
-      const text = pasteArea.value.trim();
-      if (!text) return;
-      pasteArea.value = '';
-      await submitLlmPaste(text);
-    }}
-  });
-
-  const manualWorkspace = h('div', {
-    style: 'background: var(--bg-panel); border: 1px solid var(--role-bridge); border-radius: 6px; padding: 12px; margin-bottom: 12px; display: none;'
-  },
-    h('h3', { style: 'margin-top: 0; color: var(--role-bridge); font-size: 0.95rem; margin-bottom: 6px;', textContent: '⚠️ Manual Mode: Copy Prompt to LLM & Paste Response' }),
-    manualPromptArea, copyPromptBtn, pasteArea, submitPasteBtn
-  );
-
-  // 3. Toolbar Controls (Kind Picker & Warm Continuation Toggle)
+  // 2. Kind Selector Bar
   const kindSelect = h('select', {
     style: 'padding: 6px 10px; font-weight: bold; background: var(--bg-surface); border: 1px solid var(--border-strong); border-radius: 4px;',
     on: { change: (e: Event) => selectedKindKey.value = (e.target as HTMLSelectElement).value }
@@ -77,40 +35,46 @@ export function mountChatScreen(container: HTMLElement): () => void {
 
   const warmCheck = h('input', {
     type: 'checkbox',
-    checked: isWarm.value,
     style: 'cursor: pointer; transform: scale(1.1);',
-    on: { change: (e: Event) => isWarm.value = (e.target as HTMLInputElement).checked }
-  });
+    on: { 
+      change: (e: Event) => { 
+        isWarm.value = (e.target as HTMLInputElement).checked; 
+      } 
+    }
+  }) as HTMLInputElement;
+  warmCheck.checked = isWarm.peek();
+
+  const warmToggleLabel = h('label', {
+    style: 'font-size: 0.8rem; color: var(--text-secondary); display: flex; align-items: center; gap: 6px; cursor: pointer; user-select: none; margin-left: auto;',
+    on: {
+      click: (e: Event) => {
+        // If clicking label text directly, toggle checkbox manually and prevent double-trigger
+        if (e.target !== warmCheck) {
+          e.preventDefault();
+          warmCheck.checked = !warmCheck.checked;
+          isWarm.value = warmCheck.checked;
+        }
+      }
+    }
+  }, warmCheck, 'warm continuation');
 
   const controlToolbar = h('div', { 
-    style: 'display: flex; gap: 15px; align-items: center; background: var(--bg-panel); padding: 8px 12px; border: 1px solid var(--border-subtle); border-radius: 4px 4px 0 0;' 
+    style: 'position: relative; z-index: 2; display: flex; gap: 15px; align-items: center; background: var(--bg-panel); padding: 8px 12px; border: 1px solid var(--border-subtle); border-radius: 4px 4px 0 0;' 
   },
-    h('label', { style: 'font-weight: bold; font-size: 0.8rem; color: var(--text-secondary);' }, 'System Flow: '),
+    h('span', { style: 'font-weight: bold; font-size: 0.8rem; color: var(--text-secondary);' }, 'System Flow: '),
     kindSelect,
-    h('label', { style: 'font-size: 0.8rem; color: var(--text-secondary); display: flex; align-items: center; gap: 4px;' }, warmCheck, ' warm continuation')
+    warmToggleLabel
   );
 
-  // 4. Context Summary Indicator Bar
-  const contextSummaryBar = h('div', {
-    style: 'display: flex; justify-content: space-between; align-items: center; font-size: 0.78rem; font-family: var(--font-mono); color: var(--text-secondary); background: var(--bg-elevated); padding: 4px 12px; border-left: 1px solid var(--border-subtle); border-right: 1px solid var(--border-subtle);'
-  });
-
-  const manageDocsBtn = h('button', {
-    textContent: '📄 Edit Documents Matrix',
-    style: 'background: transparent; border: 1px solid var(--border-strong); color: var(--role-bridge); border-radius: 3px; cursor: pointer; padding: 2px 6px; font-size: 0.75rem; font-weight: bold;',
-    on: { click: () => pushScreen('documents') }
-  });
-
-  // 5. Hint Bar
-  const hintBar = h('div', {
-    style: 'font-size: 0.8rem; color: var(--role-bridge); padding: 4px 12px; background: var(--bg-elevated); border-left: 1px solid var(--border-subtle); border-right: 1px solid var(--border-subtle); font-style: italic;'
-  });
-
-  // 6. Main Input Textarea & Send Button
+  // 3. Draft Doc0 / Reply Input
   const doc0Input = h('textarea', {
     style: 'width: 100%; height: 75px; padding: 10px; resize: vertical; font-family: var(--font-mono); font-size: 0.9rem; background: var(--bg-surface); color: var(--text-primary); border: 1px solid var(--border-strong); border-radius: 0 0 4px 4px;',
+    value: circ.doc0 || '',
     placeholder: 'Compose prompt draft (doc0)...',
     on: { input: async (e: Event) => {
+      // Only persist as doc0 when we're actually composing a fresh submission.
+      // In paste / reply modes the field carries the LLM output or the user reply,
+      // which are turns, not the circuit's draft intent.
       if (uiState.value === 'idle' || uiState.value === 'halted') {
         const val = (e.target as HTMLTextAreaElement).value;
         await updateActiveCircuitDoc0(val);
@@ -118,54 +82,115 @@ export function mountChatScreen(container: HTMLElement): () => void {
     }}
   });
 
+  // 4. In-Flight Processing Banner (with timer & cancel button)
+  const processingCard = h('div', {
+    style: 'display: none; align-items: center; justify-content: space-between; background: var(--bg-panel); border: 1px solid var(--role-bridge); border-radius: 0 0 4px 4px; padding: 12px 16px; margin-bottom: 8px;'
+  });
+
+  const processingTimerLabel = h('span', {
+    style: 'font-family: var(--font-mono); font-size: 0.85rem; color: var(--text-primary);'
+  });
+
+  const cancelBtn = h('button', {
+    textContent: '✕ Cancel Request',
+    className: 'k4-btn-danger',
+    style: 'font-size: 0.8rem; padding: 4px 10px;',
+    on: { click: () => abortInFlight() }
+  });
+
+  processingCard.append(
+    h('div', { style: 'display: flex; align-items: center; gap: 10px;' },
+      h('span', { style: 'color: var(--role-bridge); font-weight: bold;', textContent: '⚡ Executing Intent...' }),
+      processingTimerLabel
+    ),
+    cancelBtn
+  );
+
   const sendBtn = h('button', {
     textContent: 'Send →',
     className: 'k4-btn-primary',
     style: 'height: 40px; padding: 0 20px; font-weight: bold; align-self: flex-end; margin-top: 8px;',
     on: { click: async () => {
-      if (uiState.value === 'halted') {
-        resetEngineRun();
-        return;
-      }
-
-      const text = doc0Input.value.trim();
+      const text = (doc0Input as HTMLTextAreaElement).value.trim();
       if (!text) return;
 
       const state = uiState.value;
-      if (state === 'awaiting_llm_paste') {
-        await submitLlmPaste(text);
-      } else if (state === 'awaiting_user') {
-        await processUserReply(text);
-      } else {
-        await processSubmission(selectedKindKey.value, isWarm.value, text);
+      try {
+        if (state === 'awaiting_llm_paste') {
+          await submitLlmPaste(text);
+        } else if (state === 'awaiting_user') {
+          await processUserReply(text);
+        } else {
+          await processSubmission(selectedKindKey.value, isWarm.value, text);
+        }
+        (doc0Input as HTMLTextAreaElement).value = '';
+      } catch (err) {
+        console.error('[chat] submit failed:', err);
       }
     }}
   });
 
-  const inputWorkspace = h('div', { style: 'display: flex; flex-direction: column;' },
-    controlToolbar, contextSummaryBar, hintBar, doc0Input, sendBtn
-  );
+  layout.append(logContainer, controlToolbar, doc0Input, processingCard, sendBtn);
 
-  layout.append(logContainer, manualWorkspace, inputWorkspace);
-
-  // ─── REACTIVE MOUNTING & STATE BINDINGS ─────────────────────────────────
+  // Reactive UI state — button label + input placeholder track uiState so the
+  // operator can see which of the three routes the next Send will take.
+  let timerInterval: any = null;
+  let startTime = 0;
 
   createEffect(() => {
-    const cId = selectedCircuitId.value;
-    const circ = activeCircuit.value;
+    const state = uiState.value;
 
-    if (!cId || !circ) {
-      currentRenderedCircuitId = null;
-      logContainer.replaceChildren(h('div', {
-        style: 'color: var(--text-muted); font-style: italic; text-align: center; padding: 30px;',
-        textContent: '🔒 Select a Circuit from the context graph to initialize Chat.'
-      }));
-      return;
+    if (state === 'processing') {
+      processingCard.style.display = 'flex';
+      doc0Input.style.display = 'none';
+      sendBtn.style.display = 'none';
+
+      startTime = Date.now();
+      processingTimerLabel.textContent = 'Elapsed: 00:00s';
+      clearInterval(timerInterval);
+      timerInterval = setInterval(() => {
+        const secs = Math.floor((Date.now() - startTime) / 1000);
+        const mins = String(Math.floor(secs / 60)).padStart(2, '0');
+        const remSecs = String(secs % 60).padStart(2, '0');
+        processingTimerLabel.textContent = `Elapsed: ${mins}:${remSecs}s`;
+      }, 1000);
+    } else {
+      clearInterval(timerInterval);
+      processingCard.style.display = 'none';
+      doc0Input.style.display = 'block';
+      sendBtn.style.display = 'inline-block';
     }
 
-    if (currentRenderedCircuitId !== circ.id) {
-      currentRenderedCircuitId = circ.id;
-      doc0Input.value = circ.doc0 || '';
+    switch (state) {
+      case 'awaiting_llm_paste':
+        sendBtn.textContent      = 'Submit LLM Reply →';
+        doc0Input.placeholder    = 'PASTE LLM OUTPUT HERE — the compiled prompt is in the transcript above.';
+        (sendBtn as HTMLButtonElement).disabled = false;
+        (doc0Input as HTMLTextAreaElement).disabled = false;
+        break;
+      case 'awaiting_user':
+        sendBtn.textContent      = 'Send Reply →';
+        doc0Input.placeholder    = 'Reply to the current role…';
+        (sendBtn as HTMLButtonElement).disabled = false;
+        (doc0Input as HTMLTextAreaElement).disabled = false;
+        break;
+      case 'processing':
+        sendBtn.textContent      = 'Working…';
+        (sendBtn as HTMLButtonElement).disabled = true;
+        (doc0Input as HTMLTextAreaElement).disabled = true;
+        break;
+      case 'halted':
+        sendBtn.textContent      = 'Send →';
+        doc0Input.placeholder    = 'Run halted. Compose new intent…';
+        (sendBtn as HTMLButtonElement).disabled = false;
+        (doc0Input as HTMLTextAreaElement).disabled = false;
+        break;
+      case 'idle':
+      default:
+        sendBtn.textContent      = 'Send →';
+        doc0Input.placeholder    = 'Compose prompt draft (doc0)…';
+        (sendBtn as HTMLButtonElement).disabled = false;
+        (doc0Input as HTMLTextAreaElement).disabled = false;
     }
   });
 
@@ -182,52 +207,9 @@ export function mountChatScreen(container: HTMLElement): () => void {
     });
   });
 
-  // Update Hint Bar
+  // Render Transcript History
   createEffect(() => {
-    const activeKind = resolveKind(selectedKindKey.value);
-    hintBar.textContent = activeKind ? `${activeKind.alias} — ${activeKind.hint}` : '';
-  });
-
-  // Update Context Summary Bar
-  createEffect(() => {
-    const inclusions = resolvedInclusionForActiveView();
-    const activeDocCount = inclusions.filter(i => i.A || i.P || i.U || i.I || i.R).length;
-    const activeLangs = activeCircuitLangs.value.filter(s => s.active).length;
-
-    contextSummaryBar.replaceChildren(
-      h('span', { textContent: `📎 Attached Docs: ${activeDocCount} | 📖 Active Lexicons: ${activeLangs}` }),
-      manageDocsBtn
-    );
-  });
-
-  // Toggle Manual Mode vs Standard Input Workspace
-  createEffect(() => {
-    const state = uiState.value;
-    if (state === 'awaiting_llm_paste') {
-      manualWorkspace.style.display = 'block';
-      manualPromptArea.value = manualPrompt.value;
-      inputWorkspace.style.display = 'none';
-    } else {
-      manualWorkspace.style.display = 'none';
-      inputWorkspace.style.display = 'flex';
-    }
-
-    if (state === 'halted') {
-      sendBtn.textContent = '↺ Reset Engine';
-      sendBtn.style.background = 'var(--health-halted)';
-    } else if (state === 'awaiting_user') {
-      sendBtn.textContent = 'Send Reply →';
-      sendBtn.style.background = 'var(--role-bridge)';
-    } else {
-      const activeAlias = resolveKindAlias(selectedKindKey.value);
-      sendBtn.textContent = `Send toward ${activeAlias} →`;
-      sendBtn.style.background = 'var(--role-bridge)';
-    }
-  });
-
-  // Render Transcript History Bubbles
-  createEffect(() => {
-    const rows = ledgerGrid.value.filter(r => r.direction !== 'system');
+    const rows = ledgerGrid.value;
     logContainer.replaceChildren();
 
     if (rows.length === 0) {
@@ -238,132 +220,53 @@ export function mountChatScreen(container: HTMLElement): () => void {
       return;
     }
 
-    const turnGroups = new Map<number, LedgerRow[]>();
-    rows.forEach(r => {
-      const group = turnGroups.get(r.turnNumber) || [];
-      group.push(r);
-      turnGroups.set(r.turnNumber, group);
-    });
+    rows.forEach(row => {
+      const isOut = row.direction === 'out';
+      const alias = resolveKindAlias(row.kind);
 
-    turnGroups.forEach((turnRows, turnNum) => {
-      const turnCard = h('div', { 
-        style: 'margin-bottom: 16px; border-left: 3px solid var(--border-strong); padding-left: 12px;' 
-      });
+      const bubbleBg = isOut ? 'var(--bg-elevated)' : 'var(--bg-panel)';
 
-      turnCard.appendChild(h('div', {
-        style: 'font-size: 0.75rem; font-weight: bold; color: var(--text-muted); font-family: var(--font-mono); margin-bottom: 6px;',
-        textContent: `TURN #${turnNum}`
-      }));
+      const headerRow = h('div', { 
+        style: `
+          position: sticky; 
+          top: -20px; 
+          z-index: 2; 
+          background: ${bubbleBg}; 
+          display: flex; 
+          justify-content: space-between; 
+          align-items: center; 
+          padding: 8px 12px; 
+          margin: -10px -12px 8px -12px; 
+          border-bottom: 1px solid var(--border-subtle); 
+          border-radius: 6px 6px 0 0;
+        `.replace(/\s+/g, ' ')
+      },
+        h('span', { style: 'font-weight: bold; font-size: 0.75rem; color: var(--role-bridge);' }, `[${isOut ? 'OUT' : 'IN'}] ${alias.toUpperCase()}`),
+        isOut ? h('button', {
+          textContent: '📋 Copy',
+          style: 'font-size: 0.7rem; padding: 2px 6px; background: var(--bg-surface); border: 1px solid var(--border-subtle); border-radius: 3px; cursor: pointer; color: var(--text-secondary);',
+          on: { click: () => navigator.clipboard.writeText(row.body) }
+        }) : h('span')
+      );
 
-      turnRows.forEach(row => {
-        const isOut = row.direction === 'out';
-        const alias = resolveKindAlias(row.kind);
+      const bubble = h('div', {
+        style: `margin-bottom: 8px; padding: 10px 12px; border-radius: 6px; border: 1px solid var(--border-subtle); background: ${bubbleBg};`
+      },
+        headerRow,
+        h('div', { style: 'white-space: pre-wrap; font-family: var(--font-mono); font-size: 0.85rem;', textContent: row.body })
+      );
 
-        const bubble = h('div', {
-          style: `margin-bottom: 8px; padding: 10px 12px; border-radius: 6px; border: 1px solid var(--border-subtle); background: ${isOut ? 'var(--bg-elevated)' : 'var(--bg-panel)'}; ${isOut ? 'margin-left: 20px;' : 'margin-right: 20px;'}`
-        });
-
-        const headerBadge = h('div', {
-          style: 'display: flex; justify-content: space-between; font-size: 0.75rem; font-family: var(--font-mono); margin-bottom: 6px; color: var(--text-secondary); border-bottom: 1px dashed var(--border-subtle); padding-bottom: 4px;'
-        },
-          h('span', { style: 'font-weight: bold; color: var(--role-bridge);', textContent: `[${isOut ? 'OUT' : 'IN'}] ${alias.toUpperCase()}` }),
-          h('span', { textContent: row.header || new Date(row.createdAt).toLocaleTimeString() })
-        );
-
-        const bodyEl = h('div', {
-          style: 'white-space: pre-wrap; font-family: var(--font-mono); font-size: 0.85rem; color: var(--text-primary);',
-          textContent: row.body
-        });
-
-        let artifactCard: HTMLElement | null = null;
-        if (row.ptrCycle) {
-          artifactCard = h('div', {
-            style: 'margin-top: 8px; padding: 8px; background: rgba(34, 197, 94, 0.1); border: 1px solid var(--health-clear); border-radius: 4px; font-size: 0.8rem; color: var(--health-clear);'
-          },
-            h('strong', { textContent: `✓ Phase Transition Record (Cycle #${row.ptrCycle}.${row.ptrSeq})` }),
-            h('div', { textContent: `Stance: ${row.ptrStance} | Health: ${row.ptrHealth}` })
-          );
-        } else if (row.body.includes('[RAISE]')) {
-          artifactCard = h('div', {
-            style: 'margin-top: 8px; padding: 8px; background: rgba(234, 179, 8, 0.1); border: 1px solid var(--health-raises); border-radius: 4px; font-size: 0.8rem; color: var(--health-raises);',
-            textContent: '⚡ Structural RAISE Detected — Material Shear'
-          });
-        } else if (row.body.includes('# HALT')) {
-          artifactCard = h('div', {
-            style: 'margin-top: 8px; padding: 8px; background: rgba(239, 68, 68, 0.1); border: 1px solid var(--health-halted); border-radius: 4px; font-size: 0.8rem; color: var(--health-halted);',
-            textContent: '🛑 Terminal HALT — Execution Boundary Intercepted'
-          });
-        }
-
-        const actionsBar = h('div', { style: 'display: flex; gap: 10px; margin-top: 8px; font-size: 0.75rem; justify-content: flex-end;' });
-
-        if (isOut) {
-          const copyBtn = h('button', {
-            textContent: '📋 Copy Prompt',
-            style: 'background: transparent; border: none; color: var(--role-bridge); cursor: pointer; font-weight: bold;',
-            on: { click: () => {
-              navigator.clipboard.writeText(row.body);
-              copyBtn.textContent = 'Copied!';
-              setTimeout(() => copyBtn.textContent = '📋 Copy Prompt', 2000);
-            }}
-          });
-
-          const editBtn = h('button', {
-            textContent: '✎ Edit Prompt',
-            style: 'background: transparent; border: none; color: var(--text-muted); cursor: pointer;',
-            on: { click: () => editingRowId.value = editingRowId.value === row.id ? null : row.id }
-          });
-
-          actionsBar.append(copyBtn, editBtn);
-        } else {
-          const isKept = row.kept ?? true;
-          const keptLabel = h('label', {
-            style: `cursor: pointer; font-weight: bold; color: ${isKept ? 'var(--health-clear)' : 'var(--text-muted)'}; display: flex; align-items: center; gap: 4px;`
-          },
-            h('input', {
-              type: 'checkbox',
-              checked: isKept,
-              on: { change: async () => {
-                const cId = selectedCircuitId.peek();
-                if (cId) await markLedgerAnswerKept(cId, row.id);
-              }}
-            }),
-            isKept ? '✓ Kept Answer (Context Active)' : 'Alternate Answer'
-          );
-          actionsBar.appendChild(keptLabel);
-        }
-
-        bubble.append(headerBadge, bodyEl);
-        if (artifactCard) bubble.appendChild(artifactCard);
-        bubble.appendChild(actionsBar);
-
-        if (editingRowId.value === row.id) {
-          const editArea = h('textarea', {
-            value: row.body,
-            style: 'width: 100%; height: 80px; margin-top: 8px; font-family: var(--font-mono); font-size: 0.85rem;'
-          });
-          const saveEditBtn = h('button', {
-            textContent: 'Save Edit',
-            className: 'k4-btn-primary',
-            style: 'margin-top: 4px; padding: 4px 10px; font-size: 0.75rem;',
-            on: { click: async () => {
-              await editLedgerRow(row.id, { body: editArea.value });
-              editingRowId.value = null;
-            }}
-          });
-          bubble.append(editArea, saveEditBtn);
-        }
-
-        turnCard.appendChild(bubble);
-      });
-
-      logContainer.appendChild(turnCard);
+      logContainer.appendChild(bubble);
     });
 
     logContainer.scrollTop = logContainer.scrollHeight;
   });
 
-  return () => { container.innerHTML = ''; };
+  return () => { 
+    clearInterval(timerInterval);
+    container.innerHTML = ''; 
+  };
 }
 
 screenRegistry.register({ id: 'chat', label: 'Chat', order: 101, mount: mountChatScreen });
+

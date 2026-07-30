@@ -82,3 +82,53 @@ export function createAutosizingTextarea(props: ElementProps = {}): HTMLTextArea
     setTimeout(autoResize, 0);
     return area;
 }
+
+/**
+ * Concatenate class names. Falsy entries drop out — pass conditional expressions
+ * directly: `cx('base', isActive && 'active', big ? 'big' : 'small')`.
+ * Prefer this over string interpolation for classNames — it composes cleanly
+ * with the class-based styling in styles.css.
+ */
+export function cx(...classes: Array<string | false | null | undefined>): string {
+    return classes.filter(Boolean).join(' ');
+}
+
+/**
+ * A transparent-background 🗑️ button. Two visual variants:
+ *   'muted'   — neutral gray, for reversible operations (move-to-trash on a tree row)
+ *   'danger'  — red, for irreversible operations (delete a vocab term)
+ *
+ * Callers handle their own event-propagation semantics (e.g. stopPropagation
+ * when nested inside a clickable row) — the helper stays out of that.
+ */
+export function trashButton(props: {
+    title: string;
+    onClick: (e: MouseEvent) => void;
+    variant?: 'muted' | 'danger';
+}): HTMLButtonElement {
+    return h('button', {
+        textContent: '🗑️',
+        title: props.title,
+        className: cx('k4-trash-btn', props.variant === 'danger' && 'danger'),
+        on: { click: props.onClick as EventListener }
+    }) as HTMLButtonElement;
+}
+
+/**
+ * A "+ Add Row" primary button. The label is fixed by intent — callers with a
+ * different verb should use a plain h('button', {className: 'k4-btn-primary'}).
+ * Optional `style` overlays inline CSS for callers that need spacing tweaks.
+ */
+export function addRowButton(props: {
+    onClick: (e: MouseEvent) => void;
+    style?: string;
+}): HTMLButtonElement {
+    const attrs: ElementProps = {
+        textContent: '+ Add Row',
+        className: 'k4-btn-primary',
+        on: { click: props.onClick as EventListener }
+    };
+    if (props.style) attrs.style = props.style;
+    return h('button', attrs) as HTMLButtonElement;
+}
+

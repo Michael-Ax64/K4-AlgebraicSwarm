@@ -20,6 +20,68 @@ button, input, select, textarea { font-family: inherit; font-size: inherit; }
 input, select, textarea { background: var(--bg-deep); color: var(--text-primary); border: 1px solid var(--border-strong); border-radius: 4px; padding: 8px; }
 input:focus, select:focus, textarea:focus { outline: none; border-color: var(--role-bridge); }
 
+/* UTILITY CLASSES — screen composition atoms */
+.k4-screen-layout   { padding: 20px; height: 100%; display: flex; flex-direction: column; }
+.k4-screen-layout.scrollable { overflow-y: auto; }
+.k4-screen-layout.narrow     { max-width: 600px; }
+.k4-screen-title    { margin: 0; color: var(--text-primary); }
+.k4-screen-title.underline   { border-bottom: 1px solid var(--border-strong); padding-bottom: 8px; }
+.k4-section-title   { margin-top: 0; color: var(--text-primary); margin-bottom: 10px; }
+.k4-section-title.small      { font-size: 0.95rem; }
+.k4-section-header  { display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid var(--border-strong); padding-bottom: 12px; margin-bottom: 15px; }
+.k4-card            { background: var(--bg-surface); padding: 15px; border-radius: 6px; border: 1px solid var(--border-strong); margin-bottom: 20px; }
+.k4-empty-state     { color: var(--text-muted); font-style: italic; text-align: center; }
+.k4-empty-state.flex-center  { margin: auto; }
+.k4-subtle          { color: var(--text-muted); font-style: italic; }
+.k4-caption         { font-size: 0.8rem; color: var(--text-muted); }
+.k4-form-label      { font-weight: bold; color: var(--text-secondary); display: block; margin-bottom: 4px; font-size: 0.85rem; }
+.k4-form-label-small { display: block; font-size: 0.8rem; color: var(--text-muted); font-weight: bold; }
+.k4-form-sublabel   { font-size: 0.78rem; color: var(--text-muted); }
+
+/* Button variants — pair with k4-btn-primary already defined via className */
+.k4-btn-primary     { background: var(--role-bridge); color: #fff; border: none; padding: 6px 12px; border-radius: 3px; font-weight: bold; cursor: pointer; }
+.k4-btn-danger      { background: var(--health-halted); color: #fff; border: none; padding: 6px 12px; border-radius: 3px; font-weight: bold; cursor: pointer; }
+.k4-btn-secondary   { background: var(--bg-surface); border: 1px solid var(--border-strong); color: var(--text-secondary); padding: 6px 12px; border-radius: 3px; font-weight: bold; cursor: pointer; }
+.k4-btn-bridge      { background: var(--role-bridge); color: #fff; border: none; padding: 6px 12px; border-radius: 3px; font-weight: bold; cursor: pointer; }
+.k4-btn-paradox     { background: var(--role-paradox); color: #fff; border: none; padding: 6px 12px; border-radius: 3px; font-weight: bold; cursor: pointer; }
+
+/* Enlarged checkbox — for the checkbox-with-label pattern */
+.k4-checkbox-large  { cursor: pointer; transform: scale(1.2); }
+
+/* Danger panel + heading — for warnings and destructive zones */
+.k4-panel-danger    { padding: 15px; border: 1px dashed var(--health-halted); border-radius: 6px; background: rgba(239, 68, 68, 0.05); }
+.k4-panel-trashed   { padding: 12px; border: 1px solid var(--health-halted); border-radius: 6px; background: rgba(239, 68, 68, 0.15); margin-bottom: 20px; }
+.k4-heading-danger  { color: var(--health-halted); }
+
+/* Bridge callout — inset info-box with bridge left border */
+.k4-callout-bridge  { font-size: 0.85rem; color: var(--text-secondary); background: var(--bg-elevated); border-left: 3px solid var(--role-bridge); padding: 12px; margin-bottom: 20px; line-height: 1.5; }
+
+/* Sub-section divider (top-border + top padding) with strong-block subtitle */
+.k4-section-divider { margin-top: 15px; border-top: 1px solid var(--border-subtle); padding-top: 12px; }
+.k4-section-strong  { display: block; color: var(--text-primary); margin-bottom: 8px; }
+
+/* Full-width collapsed table */
+.k4-table-full      { width: 100%; border-collapse: collapse; }
+
+/* Sub-nav tab buttons (used by specialization editor shell) */
+.k4-subnav-tab {
+    padding: 6px 12px; border-radius: 4px; border: 1px solid transparent;
+    background: transparent; color: var(--text-secondary);
+    font-weight: bold; cursor: pointer; transition: all 0.2s;
+}
+.k4-subnav-tab.active {
+    border-color: var(--role-bridge);
+    background: var(--bg-surface);
+    color: var(--text-primary);
+}
+
+/* Icon-only trash button (used by trashButton in dom.ts) */
+.k4-trash-btn {
+    background: transparent; border: none;
+    color: var(--text-muted); cursor: pointer;
+}
+.k4-trash-btn.danger { color: var(--health-halted); }
+
 .baseline-physics {
   font-family: var(--font-mono);
   font-size: 0.8rem;

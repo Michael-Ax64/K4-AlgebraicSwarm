@@ -16,7 +16,7 @@ export function mountLedgerScreen(container: HTMLElement): () => void {
 
   const layout = h('div', { style: 'display: flex; flex-direction: column; height: 100%; padding: 20px;' },
     h('div', { style: 'display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid var(--border-strong); padding-bottom: 10px; margin-bottom: 10px; flex: 0 0 auto;' },
-      h('h2', { style: 'margin: 0; color: var(--text-primary);', textContent: 'Circuit Execution Ledger' })
+      h('h2', { className: 'k4-screen-title', textContent: 'Circuit Execution Ledger' })
     ),
     contentArea
   );
@@ -119,3 +119,4 @@ export function mountLedgerScreen(container: HTMLElement): () => void {
 }
 
 screenRegistry.register({ id: 'ledger', label: 'Log', order: 120, mount: mountLedgerScreen });
+

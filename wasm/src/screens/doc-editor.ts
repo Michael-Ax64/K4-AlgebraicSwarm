@@ -9,7 +9,7 @@ import { pushScreen } from '../router';
 import { h, createAutosizingTextarea } from '../dom';
 
 export function mountDocEditorScreen(container: HTMLElement): () => void {
-  const layout = h('div', { style: 'padding: 20px; height: 100%; display: flex; flex-direction: column;' });
+  const layout = h('div', { className: 'k4-screen-layout' });
   container.appendChild(layout);
 
   createEffect(() => {
@@ -70,10 +70,10 @@ export function mountDocEditorScreen(container: HTMLElement): () => void {
     });
 
     const headerCard = h('div', {
-      style: 'background: var(--bg-surface); padding: 15px; border-radius: 6px; border: 1px solid var(--border-strong); margin-bottom: 20px;'
+      className: 'k4-card'
     },
-      h('label', { style: labelStyle, textContent: '📄 Document Name' }), titleInput,
-      h('label', { style: labelStyle, textContent: 'Document Purpose & Description' }), descInput,
+      h('label', { className: 'k4-form-label', textContent: '📄 Document Name' }), titleInput,
+      h('label', { className: 'k4-form-label', textContent: 'Document Purpose & Description' }), descInput,
       saveHeaderBtn
     );
 
@@ -118,7 +118,8 @@ export function mountDocEditorScreen(container: HTMLElement): () => void {
 
     const deleteBtn = isNew ? null : h('button', {
       textContent: '🗑️ Delete Document',
-      style: 'background: var(--health-halted); color: #fff; border: none; padding: 6px 12px; border-radius: 4px; font-weight: bold; cursor: pointer; margin-left: 10px;',
+      className: 'k4-btn-danger',
+      style: 'border-radius: 4px; margin-left: 10px;',
       on: { click: async () => {
         if (existingDoc && confirm(`Move '${existingDoc.name}' to Trash?`)) {
           await ledgerVfs.deleteDocument(existingDoc.id);
@@ -149,6 +150,7 @@ export function mountDocEditorScreen(container: HTMLElement): () => void {
   return () => { container.innerHTML = ''; };
 }
 
-const labelStyle = 'font-weight: bold; color: var(--text-secondary); display: block; margin-bottom: 4px; font-size: 0.85rem;';
 
 screenRegistry.register({ id: 'doc-editor', label: 'Document Editor', order: 103, mount: mountDocEditorScreen });
+
+
