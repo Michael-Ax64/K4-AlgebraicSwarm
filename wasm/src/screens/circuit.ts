@@ -5,7 +5,7 @@ import { screenRegistry } from './registry';
 import {
   activeCircuit, selectedCircuitId, circuitsGrid,
   startRehoming, resolveCircuitLineage,
-  purgeCircuitPermanent, refreshAllGrids, activeSovereignSpace
+  purgeCircuitPermanent, deleteCircuitToTrash, refreshAllGrids, activeSovereignSpace
 } from '../ledger/grid-state';
 import { vfsDb } from '../ledger/fs';
 import { CircuitNode, CircuitSpecialization, K4Pole } from '../ledger/schema';
@@ -138,14 +138,21 @@ export function mountCircuitScreen(container: HTMLElement): () => void {
       heldAbsentSel.addEventListener('change', () => { c.heldAbsentVar = heldAbsentSel.value as K4Pole; persist(); });
 
       const rehomeBtn = h('button', {
-        textContent: '⇄ Re-Home Mode',
-        className: 'k4-btn-paradox', style: 'margin-top: 15px; padding: 8px 12px; border-radius: 4px;',
+        textContent: '⇄ Re-Home',
+        className: 'k4-btn-paradox',
+        style: 'padding: 8px 8px; border-radius: 4px;',
         on: { click: () => startRehoming(c.id) }
+      });
+
+      const trashBtn = h('button', {
+        textContent: '🗑️ Trash',
+        className: 'k4-btn-danger',
+        style: 'padding: 8px 8px; border-radius: 4px;',
+        on: { click: () => deleteCircuitToTrash(c.id) }
       });
 
       layout.append(
         trashBannerHost,
-        h('h2', { className: 'k4-screen-title underline', textContent: `Circuit Node Details: ${c.name}` }),
         h('label', { textContent: 'Name', className: 'k4-form-label' }), nameInput,
         specLabel || h('span'), specSel || h('span'),
         h('label', { textContent: 'Prior Circuit (Home)', className: 'k4-form-label' }), priorSel,
@@ -160,14 +167,13 @@ export function mountCircuitScreen(container: HTMLElement): () => void {
 
         phys.element,
 
-        h('div', { style: 'display: flex; align-items: center;' }, rehomeBtn)
+        h('div', { style: 'display: flex; align-items: center; gap: 10px; margin-top: 15px;' }, rehomeBtn, trashBtn)
       );
     }
   });
 
   return () => { container.innerHTML = ''; };
 }
-
 
 screenRegistry.register({ id: 'circuit', label: 'Circuit', order: 10, mount: mountCircuitScreen });
 

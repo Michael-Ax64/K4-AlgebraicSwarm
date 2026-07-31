@@ -1,8 +1,10 @@
 // wasm/src/screens/arena-state.ts
 
 import { Signal } from '../reactive';
-import { Whole, StanceOverlay } from '../arena/whole';
+import { Whole, StanceOverlay, ViewMode, SortTopology } from '../arena/whole';
 import { Face, StanceId } from '../arena/registry';
+import { LayoutName, DEFAULT_LAYOUT } from '../arena/layout';
+import { registerWorldFrame } from '../ledger/world-frame-state';
 
 export type ArenaNavMode = 'top' | 'sub-of' | 'super-of';
 
@@ -21,6 +23,31 @@ export function getArenaPathKey(path: ArenaPathNode[]): string {
 export const currentArenaPath = new Signal<ArenaPathNode[]>([]);
 export const activeWhole = new Signal<Whole | null>(null);
 
+// ─── TOP-LEVEL ARENA TAB SIGNALS ─────────────────────────────────
+export const activeArenaTab = new Signal<ViewMode>('spatial');
+export const activeArenaLayout = new Signal<LayoutName>(DEFAULT_LAYOUT);
+export const activeArenaSort = new Signal<SortTopology>('canonical');
+
+export interface ArenaFrameScratch {
+  tab: ViewMode;
+  layout: LayoutName;
+  sort: SortTopology;
+}
+
+// ─── IoC FRAME ADAPTER REGISTRATION ──────────────────────────────
+registerWorldFrame('arena', {
+  getWorldState: (): ArenaFrameScratch => ({
+    tab: activeArenaTab.peek(),
+    layout: activeArenaLayout.peek(),
+    sort: activeArenaSort.peek(),
+  }),
+  setWorldState: (raw: unknown) => {
+    const state = raw as Partial<ArenaFrameScratch>;
+    if (state?.tab) activeArenaTab.value = state.tab;
+    if (state?.layout) activeArenaLayout.value = state.layout;
+    if (state?.sort) activeArenaSort.value = state.sort;
+  }
+});
 
 // ───  LIVE TENSION OVERLAYS ───────────────────────────────────────
 

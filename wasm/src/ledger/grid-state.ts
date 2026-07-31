@@ -7,8 +7,11 @@ import {
   AppKind, LedgerRow, ConsoleRow, SystemSettings, ConsoleSeverity,
   WorldSettings, DocumentPayload
 } from './schema';
+
 import { seedDatabaseIfEmpty } from './seed';
 import { refreshKinds } from '../kinds/kinds-registry';
+import { mountWorldFrameState } from './world-frame-state';
+
 
 // ─── ACTIVE SOVEREIGN SPACE ────────────────────────────────────────────────
 export type SovereignSpace = 'circuits' | 'documents' | 'languages';
@@ -60,42 +63,17 @@ export const systemSettings = new Signal<SystemSettings>({
   telemetryMaxEntries: 0
 });
 
-// // EXPIRED Backwards-compatibility Aliases  USER WILL DELETE MANUALLY.
-// export const activeProject = activeCircuit;
-// export const activeView = activeCircuit;
-// export const activeWorldConfig = activeCircuit;
-
-// export const selectedWorldId = selectedCircuitId;
-// export const selectedProjectId = selectedCircuitId;
-// export const selectedViewId = selectedCircuitId;
-
-// export const worldsGrid = circuitsGrid;
-// export const projectsGrid = circuitsGrid;
-// export const viewsGrid = circuitsGrid;
-// export const projectCircuitsGrid = circuitsGrid;
-// export const circuitGrid = circuitsGrid;
-
-// export const worldLanguagesGrid = languagesGrid;
-// export const globalLanguagesGrid = languagesGrid;
-// export const worldDocumentsGrid = documentsGrid;
-// export const globalDocumentsGrid = documentsGrid;
-
-// export const viewLangSelectionsGrid = activeCircuitLangs;
-// export const viewDocOverridesGrid = activeCircuitDocOverrides;
-
-
-
-// THIS FILE CONTAINS FUTURE WORK, NOT YET USED HERE.
-// keep namings current and keep the functions.
-// e.g.: markLedgerAnswerKept(circuitId, rowId)
-//       editLedgerRow(id, patch)
-// also -- keep comments up to date, do not remove them!
-
-
+// Top-level UI space memory signal
+export const lastActiveTabBySpace = new Signal<Record<SovereignSpace, string>>({
+  circuits: 'chat',
+  documents: 'doc-editor',
+  languages: 'languages'
+});
 
 // ─── BOOT LEDGER FROM DATABASE ─────────────────────────────────────────────
 export async function bootLedger(): Promise<void> {
   await vfsDb.init();
+  mountWorldFrameState();  
   
   const savedSettings = await vfsDb.getSettings();
   if (savedSettings) systemSettings.value = savedSettings;
@@ -178,9 +156,10 @@ export async function resolveCircuitLineage(circuitId: string) {
   const lineage: CircuitNode[] = [];
   const visited = new Set<string>();
 
-  while (current && current.priorId !== '__TRASH__' && !visited.has(current.id)) {
+  while (current && !visited.has(current.id)) {
     visited.add(current.id);
     lineage.push(current);
+    if (current.priorId === '__TRASH__') break;
     current = current.priorId ? await vfsDb.getCircuit(current.priorId) : undefined;
   }
 
@@ -311,11 +290,6 @@ export async function purgeCircuitPermanent(circuitId: string) {
   await vfsDb.purgeCircuit(circuitId);
   await refreshAllGrids();
 
-  // Auto-repick to preserve the "always at least one Circuit selected" invariant.
-  // The rule (per operator spec): try another trash item first (operator stays in
-  // trash view); else the first root (priorId === null); else instantiate the
-  // default root and pick that. Language and Document selections just null out —
-  // they have their own selection signals and don't share this invariant.
   if (selectedCircuitId.peek() === circuitId) {
     const grid = circuitsGrid.peek();
     const nextTrash = grid.find(c => c.priorId === '__TRASH__' && c.id !== circuitId);
@@ -326,7 +300,6 @@ export async function purgeCircuitPermanent(circuitId: string) {
       if (firstRoot) {
         selectedCircuitId.value = firstRoot.id;
       } else {
-        // Nothing left — re-seed and pick the reconstituted default.
         await seedDatabaseIfEmpty();
         await refreshAllGrids();
         const seeded = circuitsGrid.peek().find(c => c.priorId === null);
@@ -418,7 +391,6 @@ export async function updateActiveCircuitDoc0(newDoc0: string): Promise<void> {
   await refreshAllGrids();
 }
 
-
 export async function markLedgerAnswerKept(circuitId: string, rowId: string): Promise<void> {
   const rows = await vfsDb.getLedgerRows(circuitId);
   const target = rows.find(r => r.id === rowId);
@@ -460,3 +432,4 @@ export async function addVocabTerm(term: string, k4Type: any, role: any, languag
     vocabGrid.value = await vfsDb.getVocabulary(languageId);
   }
 }
+

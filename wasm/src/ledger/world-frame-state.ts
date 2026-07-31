@@ -1,5 +1,5 @@
 // wasm/src/ledger/world-frame-state.ts
-//
+
 // ============================================================================
 // WORLD FRAME STATE REGISTRY — per-frame per-World UI scratch persistence
 // ============================================================================
@@ -57,9 +57,8 @@
 // ============================================================================
 
 import { createEffect } from '../reactive';
-import { selectedWorldId } from './grid-state';
 import { vfsDb } from './fs';
-import { appendConsoleRow } from './grid-state';
+import { selectedCircuitId, appendConsoleRow } from './grid-state'
 
 // ─── PUBLIC TYPES ───────────────────────────────────────────────────────────
 
@@ -145,7 +144,7 @@ export function mountWorldFrameState(): void {
   mounted = true;
 
   createEffect(() => {
-    const next = selectedWorldId.value;
+    const next = selectedCircuitId.value;
 
     // No transition: initial evaluation before any world is selected, or the
     // Signal fired without a change. Nothing to do either way.

@@ -5,7 +5,7 @@ import { activeScreen } from '../state';
 import { pushScreen } from '../router';
 import {
   selectedCircuitId, activeCircuit, circuitsGrid, languagesGrid, documentsGrid,
-  circuitTrashCount, languageTrashCount, documentTrashCount,
+  circuitTrashCount, languageTrashCount, documentTrashCount, lastActiveTabBySpace,
   activeSovereignSpace, SovereignSpace, selectedLanguageId, selectedDocumentId,
   rehomingState, cancelRehoming, executeRehome, deleteCircuitToTrash,
   startRehoming, purgeCircuitPermanent, appendConsoleRow, refreshAllGrids,
@@ -180,6 +180,16 @@ export const DefaultShell: AppShell = {
                     pushScreen('languages');
                   } else {
                     selectedCircuitId.value = node.id;
+                    //confirm/verify that this is needed .. or a good check
+                    // // If currently on a details tab ('circuit' | 'world' | 'project' | 'view'),
+                    // // switch to the selected node's matching specialization details screen:
+                    // const currentScr = activeScreen.peek();
+                    // if (['circuit', 'world', 'project', 'view'].includes(currentScr)) {
+                    //   const spec = node.specialization;
+                    //   const targetScr = (spec === 'world' || spec === 'project' || spec === 'view') ? spec : 'circuit';
+                    //   pushScreen(targetScr);
+                    // }
+                    
                   }
                 }
               }
@@ -284,6 +294,11 @@ export const DefaultShell: AppShell = {
               // 1. Guaranteed Sidebar Visibility on entry into Circuits, Documents, Languages
               sidebarCollapsed.value = false;
               activeSovereignSpace.value = item.space;
+
+              // Restore the last used tab for this space (e.g., 'arena')
+              const targetScreen = lastActiveTabBySpace.peek()[item.space] || item.id;
+              pushScreen(targetScreen);
+
             } else if (currentScr === item.id && isGlobalTopLevelScreen) {
               // 2. Re-clicking an active top-level entry (KINDS, LOG, MANIFOLD, SETTINGS) toggles tree visibility!
               sidebarCollapsed.value = !sidebarCollapsed.value;
@@ -328,7 +343,14 @@ export const DefaultShell: AppShell = {
           localNav.appendChild(h('button', {
             className: `k4-nav-btn ${currentScr === t.id ? 'active' : ''}`, 
             textContent: dynamicLabel,
-            on: { click: () => pushScreen(t.id) }
+            on: { click: () => {
+              const space = activeSovereignSpace.peek();
+              lastActiveTabBySpace.value = {
+                ...lastActiveTabBySpace.peek(),
+                [space]: t.id
+              };
+              pushScreen(t.id);
+            }}
           }));
         });
       }

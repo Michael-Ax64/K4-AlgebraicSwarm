@@ -357,3 +357,4 @@ export class Whole {
 
 import { surroundingCellsFor as surroundingCells } from './layout';
 export { surroundingCells };
+

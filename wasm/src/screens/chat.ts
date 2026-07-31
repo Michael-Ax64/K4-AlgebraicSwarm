@@ -2,23 +2,43 @@
 
 import { createEffect, Signal } from '../reactive';
 import { screenRegistry } from './registry';
-import { uiState, manualPrompt } from '../state';
+import { uiState } from '../state';
 import { processSubmission, submitLlmPaste, processUserReply, abortInFlight } from '../bridge';
 import { selectedCircuitId, activeCircuit,
          ledgerGrid, updateActiveCircuitDoc0 } from '../ledger/grid-state';
 import { systemKindsGrid, resolveKindAlias } from '../kinds/kinds-registry';
 import { h } from '../dom';
+import { registerWorldFrame } from '../ledger/world-frame-state';
 
+// ─── TOP-LEVEL CHAT SCRATCH SIGNALS ──────────────────────────────
+export const selectedChatKindKey = new Signal<string>('chat');
+export const isChatWarm = new Signal<boolean>(false);
+
+export interface ChatFrameScratch {
+  kindKey: string;
+  isWarm: boolean;
+}
+
+// ─── IoC FRAME ADAPTER REGISTRATION ──────────────────────────────
+registerWorldFrame('chat', {
+  getWorldState: (): ChatFrameScratch => ({
+    kindKey: selectedChatKindKey.peek(),
+    isWarm: isChatWarm.peek(),
+  }),
+  setWorldState: (raw: unknown) => {
+    const state = raw as Partial<ChatFrameScratch>;
+    if (state?.kindKey) selectedChatKindKey.value = state.kindKey;
+    if (state?.isWarm !== undefined) isChatWarm.value = state.isWarm;
+  }
+});
 
 export function mountChatScreen(container: HTMLElement): () => void {
-  const selectedKindKey = new Signal<string>('chat');
-  const isWarm = new Signal<boolean>(false);
+  const selectedKindKey = selectedChatKindKey;
+  const isWarm = isChatWarm;
 
   const layout = h('div', { style: 'display: flex; flex-direction: column; height: 100%; padding: 15px;' });
   container.appendChild(layout);
 
-  // Circuit invariant: seedDatabaseIfEmpty runs at boot, purgeCircuitPermanent
-  // auto-repicks, so activeCircuit is always non-null in a mounted screen.
   const cId = selectedCircuitId.peek()!;
   const circ = activeCircuit.peek()!;
 
@@ -42,13 +62,15 @@ export function mountChatScreen(container: HTMLElement): () => void {
       } 
     }
   }) as HTMLInputElement;
-  warmCheck.checked = isWarm.peek();
+
+  createEffect(() => {
+    warmCheck.checked = isWarm.value;
+  });
 
   const warmToggleLabel = h('label', {
     style: 'font-size: 0.8rem; color: var(--text-secondary); display: flex; align-items: center; gap: 6px; cursor: pointer; user-select: none; margin-left: auto;',
     on: {
       click: (e: Event) => {
-        // If clicking label text directly, toggle checkbox manually and prevent double-trigger
         if (e.target !== warmCheck) {
           e.preventDefault();
           warmCheck.checked = !warmCheck.checked;
@@ -72,9 +94,6 @@ export function mountChatScreen(container: HTMLElement): () => void {
     value: circ.doc0 || '',
     placeholder: 'Compose prompt draft (doc0)...',
     on: { input: async (e: Event) => {
-      // Only persist as doc0 when we're actually composing a fresh submission.
-      // In paste / reply modes the field carries the LLM output or the user reply,
-      // which are turns, not the circuit's draft intent.
       if (uiState.value === 'idle' || uiState.value === 'halted') {
         const val = (e.target as HTMLTextAreaElement).value;
         await updateActiveCircuitDoc0(val);
@@ -132,8 +151,7 @@ export function mountChatScreen(container: HTMLElement): () => void {
 
   layout.append(logContainer, controlToolbar, doc0Input, processingCard, sendBtn);
 
-  // Reactive UI state — button label + input placeholder track uiState so the
-  // operator can see which of the three routes the next Send will take.
+  // Reactive UI state
   let timerInterval: any = null;
   let startTime = 0;
 
